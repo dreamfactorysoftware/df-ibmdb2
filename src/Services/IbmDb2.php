@@ -11,4 +11,9 @@ use DreamFactory\Core\SqlDb\Services\SqlDb;
  */
 class IbmDb2 extends SqlDb
 {
+    public static function adaptConfig(array &$config)
+    {
+        $config['driver'] = 'ibm';
+        parent::adaptConfig($config);
+    }
 }

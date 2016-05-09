@@ -6,9 +6,9 @@ use DreamFactory\Core\Enums\ServiceTypeGroups;
 use DreamFactory\Core\IbmDb2\Database\Connectors\IbmConnector;
 use DreamFactory\Core\IbmDb2\Database\IbmConnection;
 use DreamFactory\Core\IbmDb2\Database\Schema\IbmSchema;
+use DreamFactory\Core\IbmDb2\Models\IbmDbConfig;
 use DreamFactory\Core\Services\ServiceManager;
 use DreamFactory\Core\Services\ServiceType;
-use DreamFactory\Core\SqlDb\Models\SqlDbConfig;
 use DreamFactory\Core\IbmDb2\Services\IbmDb2;
 use Illuminate\Database\DatabaseManager;
 
@@ -33,7 +33,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
                     'label'          => 'IBM DB2',
                     'description'    => 'Database service supporting IBM DB2 SQL connections.',
                     'group'          => ServiceTypeGroups::DATABASE,
-                    'config_handler' => SqlDbConfig::class,
+                    'config_handler' => IbmDbConfig::class,
                     'factory'        => function ($config){
                         return new IbmDb2($config);
                     },
