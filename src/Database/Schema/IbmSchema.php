@@ -352,7 +352,7 @@ SQL;
             $table->addColumn($c);
         }
 
-        return (count($table->columns) > 0);
+        return true;
     }
 
     /**
@@ -471,13 +471,11 @@ SQL;
             $index = array_change_key_case((array)$index, CASE_UPPER);
             $columns = explode("+", ltrim($index['COLNAMES'], '+'));
             foreach ($columns as $colname) {
-                $cnk = strtolower($colname);
-                if (isset($table->columns[$cnk])) {
-                    $table->columns[$cnk]->isPrimaryKey = true;
-                    if ((ColumnSchema::TYPE_INTEGER === $table->columns[$cnk]->type) &&
-                        $table->columns[$cnk]->autoIncrement
-                    ) {
-                        $table->columns[$cnk]->type = ColumnSchema::TYPE_ID;
+                $column = $table->getColumn($colname);
+                if (isset($column)) {
+                    $column->isPrimaryKey = true;
+                    if ((ColumnSchema::TYPE_INTEGER === $column->type) && $column->autoIncrement) {
+                        $column->type = ColumnSchema::TYPE_ID;
                     }
                     if ($table->primaryKey === null) {
                         $table->primaryKey = $colname;
@@ -486,12 +484,14 @@ SQL;
                     } else {
                         $table->primaryKey[] = $colname;
                     }
+                    // update the column in the table
+                    $table->addColumn($column);
                 }
             }
         }
 
         /* @var $c ColumnSchema */
-        foreach ($table->columns as $c) {
+        foreach ($table->getColumns() as $c) {
             if ($c->autoIncrement && $c->isPrimaryKey) {
                 $table->sequenceName = $c->rawName;
                 break;
@@ -603,7 +603,7 @@ SQL;
     {
         if ($table->sequenceName !== null &&
             is_string($table->primaryKey) &&
-            $table->columns[strtolower($table->primaryKey)]->autoIncrement
+            $table->getColumn($table->primaryKey)->autoIncrement
         ) {
             if ($value === null) {
                 $value = $this->selectValue("SELECT MAX({$table->primaryKey}) FROM {$table->rawName}") + 1;
