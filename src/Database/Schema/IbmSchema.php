@@ -2,6 +2,7 @@
 namespace DreamFactory\Core\IbmDb2\Database\Schema;
 
 use DreamFactory\Core\Database\DataReader;
+use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\Schema;
 use DreamFactory\Core\Database\Schema\TableSchema;
 
@@ -10,6 +11,13 @@ use DreamFactory\Core\Database\Schema\TableSchema;
  */
 class IbmSchema extends Schema
 {
+    /**
+     * @const string Quoting characters
+     */
+    const LEFT_QUOTE_CHARACTER = ''; // no quoting
+
+    const RIGHT_QUOTE_CHARACTER = ''; // no quoting
+
     /**
      * @type boolean
      */
@@ -261,32 +269,6 @@ class IbmSchema extends Schema
     }
 
     /**
-     * Quotes a table name for use in a query.
-     * A simple table name does not schema prefix.
-     *
-     * @param string $name table name
-     *
-     * @return string the properly quoted table name
-     */
-    public function quoteSimpleTableName($name)
-    {
-        return $name;
-    }
-
-    /**
-     * Quotes a column name for use in a query.
-     * A simple column name does not contain prefix.
-     *
-     * @param string $name column name
-     *
-     * @return string the properly quoted column name
-     */
-    public function quoteSimpleColumnName($name)
-    {
-        return $name;
-    }
-
-    /**
      * @inheritdoc
      */
     protected function loadTable(TableSchema $table)
@@ -377,15 +359,15 @@ SQL;
             $c->scale = $column['SCALE'];
         }
 
-        $c->extractFixedLength($column['TYPENAME']);
-        $c->extractMultiByteSupport($column['TYPENAME']);
-        $c->extractType($column['TYPENAME']);
+        $c->fixedLength = $this->extractFixedLength($column['TYPENAME']);
+        $c->supportsMultibyte = $this->extractMultiByteSupport($column['TYPENAME']);
+        $this->extractType($c, $column['TYPENAME']);
         if (is_string($column['DEFAULT'])) {
             $column['DEFAULT'] = trim($column['DEFAULT'], '\'');
         }
         $default = ($column['DEFAULT'] == "NULL") ? null : $column['DEFAULT'];
 
-        $c->extractDefault($default);
+        $this->extractDefault($c, $default);
 
         return $c;
     }
