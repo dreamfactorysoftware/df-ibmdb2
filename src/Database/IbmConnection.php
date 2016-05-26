@@ -20,7 +20,7 @@ class IbmConnection extends Connection
     public function __construct(PDO $pdo, $database = '', $tablePrefix = '', array $config = [])
     {
         parent::__construct($pdo, $database, $tablePrefix, $config);
-        if (!isset($config['schema'])) {
+        if (isset($config['schema'])) {
             $this->currentSchema = $this->defaultSchema = strtoupper($config['schema']);
         }
     }
