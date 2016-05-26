@@ -2,24 +2,39 @@
 
 namespace DreamFactory\Core\IbmDb2\Database\Query\Processors;
 
+use DreamFactory\Core\IbmDb2\Database\Query\Grammars\IbmGrammar;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Processors\Processor;
 
 class IbmProcessor extends Processor
 {
     /**
-     * Process the results of a column listing query.
+     * Process an "insert get ID" query.
      *
-     * @param  array  $results
-     * @return array
+     * @param  Builder $query
+     * @param  string                             $sql
+     * @param  array                              $values
+     * @param  string                             $sequence
+     *
+     * @return int/array
      */
-    public function processColumnListing($results)
+    public function processInsertGetId(Builder $query, $sql, $values, $sequence = null)
     {
-        $mapping = function ($r) {
-            $r = (object) $r;
+        $sequenceStr = $sequence ?: 'id';
+        if (is_array($sequence)) {
+            $grammar = new IbmGrammar;
+            $sequenceStr = $grammar->columnize($sequence);
+        }
+        $sql = 'select ' . $sequenceStr . ' from new table (' . $sql;
+        $sql .= ')';
+        $results = $query->getConnection()->select($sql, $values);
+        if (is_array($sequence)) {
+            return array_values((array)$results[0]);
+        }
 
-            return $r->column_name;
-        };
+        $result = (array)$results[0];
+        $id = $result[$sequenceStr];
 
-        return array_map($mapping, $results);
+        return is_numeric($id) ? (int)$id : $id;
     }
 }
