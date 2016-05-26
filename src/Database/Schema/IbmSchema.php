@@ -50,8 +50,6 @@ class IbmSchema extends Schema
             case 'pk':
             case ColumnSchema::TYPE_ID:
                 $info['type'] = 'integer';
-                $info['type_extras'] =
-                    'not null PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1)';
                 $info['allow_null'] = false;
                 $info['auto_increment'] = true;
                 $info['is_primary_key'] = true;
@@ -102,7 +100,6 @@ class IbmSchema extends Schema
 
             case ColumnSchema::TYPE_BOOLEAN:
                 $info['type'] = 'smallint';
-                $info['type_extras'] = '(1)';
                 $default = (isset($info['default'])) ? $info['default'] : null;
                 if (isset($default)) {
                     // convert to bit 0 or 1, where necessary
@@ -146,17 +143,6 @@ class IbmSchema extends Schema
             case 'smallint':
             case 'int':
             case 'bigint':
-                if (!isset($info['type_extras'])) {
-                    $length =
-                        (isset($info['length']))
-                            ? $info['length']
-                            : ((isset($info['precision'])) ? $info['precision']
-                            : null);
-                    if (!empty($length)) {
-                        $info['type_extras'] = "($length)"; // sets the viewable length
-                    }
-                }
-
                 $default = (isset($info['default'])) ? $info['default'] : null;
                 if (isset($default) && is_numeric($default)) {
                     $info['default'] = intval($default);
@@ -166,6 +152,7 @@ class IbmSchema extends Schema
             case 'decimal':
             case 'numeric':
             case 'real':
+            case 'float':
             case 'double':
                 if (!isset($info['type_extras'])) {
                     $length =
@@ -248,11 +235,6 @@ class IbmSchema extends Schema
             $definition .= ' DEFAULT ' . $default;
         }
 
-        $auto = (isset($info['auto_increment'])) ? filter_var($info['auto_increment'], FILTER_VALIDATE_BOOLEAN) : false;
-        if ($auto) {
-            $definition .= ' AUTO_INCREMENT';
-        }
-
         $isUniqueKey = (isset($info['is_unique'])) ? filter_var($info['is_unique'], FILTER_VALIDATE_BOOLEAN) : false;
         $isPrimaryKey =
             (isset($info['is_primary_key'])) ? filter_var($info['is_primary_key'], FILTER_VALIDATE_BOOLEAN) : false;
@@ -263,6 +245,11 @@ class IbmSchema extends Schema
             $definition .= ' UNIQUE KEY';
         } elseif ($isPrimaryKey) {
             $definition .= ' PRIMARY KEY';
+        }
+
+        $auto = (isset($info['auto_increment'])) ? filter_var($info['auto_increment'], FILTER_VALIDATE_BOOLEAN) : false;
+        if ($auto) {
+            $definition .= ' GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1)';
         }
 
         return $definition;
