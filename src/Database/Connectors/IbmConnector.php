@@ -44,7 +44,7 @@ class IbmConnector extends Connector implements ConnectorInterface
 
         $dsn = "ibm:";
         
-        if (!empty($driverName)){
+        if (empty($driverName)){
             $driverName = "{IBM DB2 ODBC DRIVER}";
         }
         $dsn .= "DRIVER={$driverName};";
