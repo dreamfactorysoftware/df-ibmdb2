@@ -1,10 +1,10 @@
 <?php
 namespace DreamFactory\Core\IbmDb2;
 
+use Cooperl\Database\DB2\Connectors\IBMConnector;
+use Cooperl\Database\DB2\DB2Connection;
 use DreamFactory\Core\Database\DbSchemaExtensions;
 use DreamFactory\Core\Enums\ServiceTypeGroups;
-use DreamFactory\Core\IbmDb2\Database\Connectors\IbmConnector;
-use DreamFactory\Core\IbmDb2\Database\IbmConnection;
 use DreamFactory\Core\IbmDb2\Database\Schema\IbmSchema;
 use DreamFactory\Core\IbmDb2\Models\IbmDbConfig;
 use DreamFactory\Core\Services\ServiceManager;
@@ -19,9 +19,9 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         // Add our database drivers.
         $this->app->resolving('db', function (DatabaseManager $db) {
             $db->extend('ibm', function ($config) {
-                $connector  = new IbmConnector();
+                $connector  = new IBMConnector();
                 $connection = $connector->connect($config);
-                return new IbmConnection($connection, $config["database"], $config["prefix"], $config);
+                return new DB2Connection($connection, $config["database"], $config["prefix"], $config);
             });
         });
 

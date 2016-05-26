@@ -595,6 +595,8 @@ class IbmGrammar extends Grammar
         if ($column->unsigned) {
             return ' unsigned';
         }
+
+        return null;
     }
 
     /**
@@ -609,6 +611,8 @@ class IbmGrammar extends Grammar
         if (! is_null($column->charset)) {
             return ' character set '.$column->charset;
         }
+
+        return null;
     }
 
     /**
@@ -623,6 +627,8 @@ class IbmGrammar extends Grammar
         if (! is_null($column->collation)) {
             return ' collate '.$column->collation;
         }
+
+        return null;
     }
 
     /**
@@ -649,6 +655,8 @@ class IbmGrammar extends Grammar
         if (! is_null($column->default)) {
             return ' default '.$this->getDefaultValue($column->default);
         }
+
+        return null;
     }
 
     /**
@@ -663,6 +671,8 @@ class IbmGrammar extends Grammar
         if (in_array($column->type, $this->serials) && $column->autoIncrement) {
             return ' auto_increment primary key';
         }
+
+        return null;
     }
 
     /**
@@ -677,6 +687,8 @@ class IbmGrammar extends Grammar
         if (! is_null($column->first)) {
             return ' first';
         }
+
+        return null;
     }
 
     /**
@@ -691,6 +703,8 @@ class IbmGrammar extends Grammar
         if (! is_null($column->after)) {
             return ' after '.$this->wrap($column->after);
         }
+
+        return null;
     }
 
     /**
@@ -705,6 +719,8 @@ class IbmGrammar extends Grammar
         if (! is_null($column->comment)) {
             return ' comment "'.$column->comment.'"';
         }
+        
+        return null;
     }
 
     /**
