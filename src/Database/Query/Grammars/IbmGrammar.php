@@ -8,26 +8,10 @@ use Illuminate\Database\Query\Builder;
 class IbmGrammar extends Grammar
 {
     /**
-     * Wrap a single string in keyword identifiers.
-     *
-     * @param  string $value
-     *
-     * @return string
-     */
-    protected function wrapValue($value)
-    {
-        if ($value === '*') {
-            return $value;
-        }
-
-        return str_replace('"', '""', $value);
-    }
-
-    /**
      * Compile the "limit" portions of the query.
      *
      * @param  Builder $query
-     * @param  int                               $limit
+     * @param  int     $limit
      *
      * @return string
      */
@@ -61,7 +45,7 @@ class IbmGrammar extends Grammar
      * Create a full ANSI offset clause for the query.
      *
      * @param  Builder $query
-     * @param  array                             $components
+     * @param  array   $components
      *
      * @return string
      */
@@ -144,7 +128,7 @@ class IbmGrammar extends Grammar
      * Compile the "offset" portions of the query.
      *
      * @param  Builder $query
-     * @param  int                               $offset
+     * @param  int     $offset
      *
      * @return string
      */

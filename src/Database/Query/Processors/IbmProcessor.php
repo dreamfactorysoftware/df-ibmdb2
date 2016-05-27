@@ -12,9 +12,9 @@ class IbmProcessor extends Processor
      * Process an "insert get ID" query.
      *
      * @param  Builder $query
-     * @param  string                             $sql
-     * @param  array                              $values
-     * @param  string                             $sequence
+     * @param  string  $sql
+     * @param  array   $values
+     * @param  string  $sequence
      *
      * @return int/array
      */
@@ -25,7 +25,7 @@ class IbmProcessor extends Processor
             $grammar = new IbmGrammar;
             $sequenceStr = $grammar->columnize($sequence);
         }
-        $sql = 'select ' . $sequenceStr . ' from new table (' . $sql;
+        $sql = 'select "' . $sequenceStr . '" from new table (' . $sql;
         $sql .= ')';
         $results = $query->getConnection()->select($sql, $values);
         if (is_array($sequence)) {
