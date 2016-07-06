@@ -716,7 +716,7 @@ MYSQL;
                 $rawName = $this->quoteTableName($name);
             }
             $settings = compact('schemaName', 'name', 'publicName', 'rawName');
-            $names[strtolower($name)] =
+            $names[strtolower($publicName)] =
                 ('PROCEDURE' === $type) ? new ProcedureSchema($settings) : new FunctionSchema($settings);
         }
 
@@ -737,7 +737,7 @@ MYSQL;
         foreach ($this->connection->select($sql) as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $pos = intval(array_get($row, 'ORDINAL'));
-                $simpleType = static::extractSimpleType(array_get($row, 'TYPENAME'));
+            $simpleType = static::extractSimpleType(array_get($row, 'TYPENAME'));
             if (0 === $pos) {
                 $holder->returnType = $simpleType;
             } else {
@@ -787,89 +787,9 @@ MYSQL;
     /**
      * @inheritdoc
      */
-    protected function callProcedureInternal($routine, array $param_schemas, array &$values)
-    {
-        $paramStr = '';
-        foreach ($param_schemas as $key => $paramSchema) {
-            switch ($paramSchema->paramType) {
-                case 'IN':
-                case 'INOUT':
-                case 'OUT':
-                    $pName = ':' . $paramSchema->name;
-                    $paramStr .= (empty($paramStr)) ? $pName : ", $pName";
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        $sql = "CALL $routine($paramStr)";
-
-        /** @type \PDOStatement $statement */
-        $statement = $this->connection->getPdo()->prepare($sql);
-
-        // do binding
-        foreach ($param_schemas as $key => $paramSchema) {
-            switch ($paramSchema->paramType) {
-                case 'IN':
-                case 'INOUT':
-                case 'OUT':
-                    $pdoType = $this->getPdoType($paramSchema->type);
-                    $this->bindParam($statement, ':' . $paramSchema->name, $values[$key],
-                        $pdoType | \PDO::PARAM_INPUT_OUTPUT, $paramSchema->length);
-                    break;
-            }
-        }
-
-        // execute
-        // support multiple result sets
-        try {
-            $statement->execute();
-            $reader = new DataReader($statement);
-        } catch (\Exception $e) {
-            $errorInfo = $e instanceof \PDOException ? $e : null;
-            $message = $e->getMessage();
-            throw new \Exception($message, (int)$e->getCode(), $errorInfo);
-        }
-        $result = [];
-        if (!empty($temp = $reader->readAll())) {
-            $result[] = $temp;
-        }
-        if ($reader->nextResult()) {
-            do {
-                $temp = $reader->readAll();
-                $keep = true;
-                if (1 == count($temp)) {
-                    $check = current($temp);
-                    foreach ($param_schemas as $key => $paramSchema) {
-                        if (array_key_exists($paramSchema->name, $check)) {
-                            $values[$paramSchema->name] = $check[$paramSchema->name];
-                            $keep = false;
-                        }
-                    }
-                }
-                if ($keep) {
-                    if (!empty($temp)) {
-                        $result[] = $temp;
-                    }
-                }
-            } while ($reader->nextResult());
-        }
-
-        // if there is only one data set, just return it
-        if (1 == count($result)) {
-            $result = $result[0];
-        }
-
-        return $result;
-    }
-
-    /**
-     * @inheritdoc
-     */
-    protected function callFunctionInternal($routine, $paramStr)
+    protected function getFunctionStatement($routine, $param_schemas, $values)
     {
 //        $sql = "SELECT * from TABLE($name($paramStr))";
-        return parent::callFunctionInternal($routine, $paramStr) . ' FROM SYSIBM.SYSDUMMY1';
+        return parent::getFunctionStatement($routine, $param_schemas, $values) . ' FROM SYSIBM.SYSDUMMY1';
     }
 }
