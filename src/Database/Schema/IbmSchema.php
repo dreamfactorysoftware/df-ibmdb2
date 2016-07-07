@@ -1,11 +1,11 @@
 <?php
 namespace DreamFactory\Core\IbmDb2\Database\Schema;
 
-use DreamFactory\Core\Database\DataReader;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\FunctionSchema;
 use DreamFactory\Core\Database\Schema\ParameterSchema;
 use DreamFactory\Core\Database\Schema\ProcedureSchema;
+use DreamFactory\Core\Database\Schema\RoutineSchema;
 use DreamFactory\Core\Database\Schema\Schema;
 use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Enums\DbSimpleTypes;
@@ -697,16 +697,18 @@ SQL;
         }
 
         $sql = <<<MYSQL
-SELECT ROUTINENAME FROM SYSCAT.ROUTINES WHERE {$where}
+SELECT ROUTINENAME, ROUTINETYPE, RETURN_TYPENAME, FUNCTIONTYPE FROM SYSCAT.ROUTINES WHERE {$where}
 MYSQL;
 
-        $rows = $this->selectColumn($sql, $bindings);
+        $rows = $this->connection->select($sql, $bindings);
 
         $defaultSchema = $this->getDefaultSchema();
         $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
 
         $names = [];
-        foreach ($rows as $name) {
+        foreach ($rows as $row) {
+            $row = array_change_key_case((array)$row, CASE_UPPER);
+            $name = array_get($row, 'ROUTINENAME');
             $schemaName = $schema;
             if ($addSchema) {
                 $publicName = $schemaName . '.' . $name;
@@ -715,7 +717,11 @@ MYSQL;
                 $publicName = $name;
                 $rawName = $this->quoteTableName($name);
             }
-            $settings = compact('schemaName', 'name', 'publicName', 'rawName');
+            $returnType = array_get($row, 'RETURN_TYPENAME');
+            if (!empty($returnType) && (0 !== strcasecmp('void', $returnType))) {
+                $returnType = static::extractSimpleType($returnType);
+            }
+            $settings = compact('schemaName', 'name', 'publicName', 'rawName', 'returnType');
             $names[strtolower($publicName)] =
                 ('PROCEDURE' === $type) ? new ProcedureSchema($settings) : new FunctionSchema($settings);
         }
@@ -736,6 +742,7 @@ MYSQL;
 
         foreach ($this->connection->select($sql) as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
+            $simpleType = static::extractSimpleType(array_get($row, 'TYPENAME'));
             switch (strtoupper(array_get($row, 'ROWTYPE', ''))) {
                 case 'P':
                     $paramType = 'IN';
@@ -748,6 +755,9 @@ MYSQL;
                     break;
                 case 'R':
                 case 'C':
+                    if (!$holder->returnType) {
+                        $holder->returnType = $simpleType;
+                    }
                     continue 2;
                     break;
                 default:
@@ -755,7 +765,6 @@ MYSQL;
                     break;
             }
             $pos = intval(array_get($row, 'ORDINAL'));
-            $simpleType = static::extractSimpleType(array_get($row, 'TYPENAME'));
             if (0 === $pos) {
                 $holder->returnType = $simpleType;
             } else {
@@ -805,9 +814,14 @@ MYSQL;
     /**
      * @inheritdoc
      */
-    protected function getFunctionStatement($routine, $param_schemas, $values)
+    protected function getFunctionStatement(RoutineSchema $routine, array $param_schemas, array &$values)
     {
-//        $sql = "SELECT * from TABLE($name($paramStr))";
+        if ($routine->returnType) {
+            $paramStr = $this->getRoutineParamString($param_schemas, $values);
+
+            return "SELECT * from TABLE({$routine->rawName}($paramStr))";
+        }
+        
         return parent::getFunctionStatement($routine, $param_schemas, $values) . ' FROM SYSIBM.SYSDUMMY1';
     }
 }
