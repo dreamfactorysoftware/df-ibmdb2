@@ -736,6 +736,24 @@ MYSQL;
 
         foreach ($this->connection->select($sql) as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
+            switch (strtoupper(array_get($row, 'ROWTYPE', ''))) {
+                case 'P':
+                    $paramType = 'IN';
+                    break;
+                case 'B':
+                    $paramType = 'INOUT';
+                    break;
+                case 'O':
+                    $paramType = 'OUT';
+                    break;
+                case 'R':
+                case 'C':
+                    continue 2;
+                    break;
+                default:
+                    continue 2;
+                    break;
+            }
             $pos = intval(array_get($row, 'ORDINAL'));
             $simpleType = static::extractSimpleType(array_get($row, 'TYPENAME'));
             if (0 === $pos) {
@@ -745,7 +763,7 @@ MYSQL;
                     [
                         'name'          => array_get($row, 'PARMNAME'),
                         'position'      => $pos,
-                        'param_type'    => array_get($row, 'ROWTYPE'),
+                        'param_type'    => $paramType,
                         'type'          => $simpleType,
                         'db_type'       => array_get($row, 'TYPENAME'),
                         'length'        => (isset($row['LENGTH']) ? intval(array_get($row, 'LENGTH')) : null),
