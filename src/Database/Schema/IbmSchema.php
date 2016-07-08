@@ -699,7 +699,7 @@ SQL;
         }
 
         $sql = <<<MYSQL
-SELECT ROUTINENAME, ROUTINETYPE, RETURN_TYPENAME, FUNCTIONTYPE FROM SYSCAT.ROUTINES WHERE {$where}
+SELECT ROUTINENAME, RETURN_TYPENAME, FUNCTIONTYPE FROM SYSCAT.ROUTINES WHERE {$where}
 MYSQL;
 
         $rows = $this->connection->select($sql, $bindings);
@@ -759,7 +759,12 @@ MYSQL;
 
         foreach ($this->connection->select($sql) as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
-            $simpleType = static::extractSimpleType(array_get($row, 'TYPENAME'));
+            $paramName = array_get($row, 'PARMNAME');
+            $dbType = array_get($row, 'TYPENAME');
+            $simpleType = static::extractSimpleType($dbType);
+            $pos = intval(array_get($row, 'ORDINAL'));
+            $length = (isset($row['LENGTH']) ? intval(array_get($row, 'LENGTH')) : null);
+            $scale = (isset($row['SCALE']) ? intval(array_get($row, 'SCALE')) : null);
             switch (strtoupper(array_get($row, 'ROWTYPE', ''))) {
                 case 'P':
                     $paramType = 'IN';
@@ -772,31 +777,36 @@ MYSQL;
                     break;
                 case 'R':
                 case 'C':
-                    if (!$holder->returnType) {
-                        $holder->returnType = $simpleType;
-                    }
+                    $holder->returnSchema[] = [
+                        'name'      => $paramName,
+                        'position'  => $pos,
+                        'type'      => $simpleType,
+                        'db_type'   => $dbType,
+                        'length'    => $length,
+                        'precision' => $length,
+                        'scale'     => $scale,
+                    ];
                     continue 2;
                     break;
                 default:
                     continue 2;
                     break;
             }
-            $pos = intval(array_get($row, 'ORDINAL'));
             if (0 === $pos) {
-                if (!$holder->returnType) {
+                if (empty($holder->returnType)) {
                     $holder->returnType = $simpleType;
                 }
             } else {
                 $holder->addParameter(new ParameterSchema(
                     [
-                        'name'          => array_get($row, 'PARMNAME'),
+                        'name'          => $paramName,
                         'position'      => $pos,
                         'param_type'    => $paramType,
                         'type'          => $simpleType,
-                        'db_type'       => array_get($row, 'TYPENAME'),
-                        'length'        => (isset($row['LENGTH']) ? intval(array_get($row, 'LENGTH')) : null),
-                        'precision'     => (isset($row['LENGTH']) ? intval(array_get($row, 'LENGTH')) : null),
-                        'scale'         => (isset($row['SCALE']) ? intval(array_get($row, 'SCALE')) : null),
+                        'db_type'       => $dbType,
+                        'length'        => $length,
+                        'precision'     => $length,
+                        'scale'         => $scale,
                         'default_value' => array_get($row, 'DEFAULT'),
                     ]
                 ));
