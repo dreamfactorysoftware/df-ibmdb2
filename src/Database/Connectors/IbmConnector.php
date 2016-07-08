@@ -9,13 +9,6 @@ use PDO;
 class IbmConnector extends Connector implements ConnectorInterface
 {
     /**
-     * The default PDO connection options.
-     *
-     * @var array
-     */
-    protected $options = [];
-    
-    /**
      * Establish a database connection.
      *
      * @param  array  $config
