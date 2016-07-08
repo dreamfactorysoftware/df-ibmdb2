@@ -33,6 +33,7 @@ class IbmSchema extends Schema
             return $this->isIseries;
         }
         try {
+            /** @noinspection SqlDialectInspection */
             $sql = 'SELECT * FROM QSYS2.SYSTABLES';
             $stmt = $this->connection->select($sql);
             $this->isIseries = (bool)$stmt;
@@ -514,6 +515,7 @@ MYSQL;
      *
      * @param string $schema the schema of the tables. Defaults to empty string, meaning the current or default schema.
      *                       If not empty, the returned table names will be prefixed with the schema name.
+     * @param bool   $include_views
      *
      * @return array all table names in the database.
      */
@@ -717,9 +719,24 @@ MYSQL;
                 $publicName = $name;
                 $rawName = $this->quoteTableName($name);
             }
-            $returnType = array_get($row, 'RETURN_TYPENAME');
-            if (!empty($returnType) && (0 !== strcasecmp('void', $returnType))) {
+            if (!empty($returnType = array_get($row, 'RETURN_TYPENAME'))) {
                 $returnType = static::extractSimpleType($returnType);
+            } else {
+                switch ($functionType = array_get($row, 'FUNCTIONTYPE')) {
+                    case 'R': // row
+                        $returnType = 'row';
+                        break;
+                    case 'T': // table
+                        $returnType = 'table';
+                        break;
+                    case 'C': // column or aggregate
+                        $returnType = 'column';
+                        break;
+                    case 'S': // scalar, return type should be set
+                        break;
+                    default: // procedure
+                        break;
+                }
             }
             $settings = compact('schemaName', 'name', 'publicName', 'rawName', 'returnType');
             $names[strtolower($publicName)] =
@@ -766,7 +783,9 @@ MYSQL;
             }
             $pos = intval(array_get($row, 'ORDINAL'));
             if (0 === $pos) {
-                $holder->returnType = $simpleType;
+                if (!$holder->returnType) {
+                    $holder->returnType = $simpleType;
+                }
             } else {
                 $holder->addParameter(new ParameterSchema(
                     [
@@ -816,12 +835,17 @@ MYSQL;
      */
     protected function getFunctionStatement(RoutineSchema $routine, array $param_schemas, array &$values)
     {
-        if ($routine->returnType) {
-            $paramStr = $this->getRoutineParamString($param_schemas, $values);
+        switch ($routine->returnType) {
+            case 'row':
+            case 'table':
+                $paramStr = $this->getRoutineParamString($param_schemas, $values);
 
-            return "SELECT * from TABLE({$routine->rawName}($paramStr))";
+                /** @noinspection SqlDialectInspection */
+                return "SELECT * from TABLE({$routine->rawName}($paramStr))";
+                break;
+            default:
+                return parent::getFunctionStatement($routine, $param_schemas, $values) . ' FROM SYSIBM.SYSDUMMY1';
+                break;
         }
-        
-        return parent::getFunctionStatement($routine, $param_schemas, $values) . ' FROM SYSIBM.SYSDUMMY1';
     }
 }
