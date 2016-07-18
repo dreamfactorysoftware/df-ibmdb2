@@ -663,7 +663,7 @@ MYSQL;
 
         $sql = <<<MYSQL
 ALTER TABLE {$this->quoteTableName($table)} 
-    ALTER COLUMN {$this->quoteColumnName($column)} SET DATA TYPE {$this->getColumnType($definition)}
+ALTER COLUMN {$this->quoteColumnName($column)} SET DATA TYPE {$this->getColumnType($definition)}
 MYSQL;
 
         if ($columnSchema->allowNull != $allowNullNewType) {
@@ -682,9 +682,9 @@ MYSQL;
      */
     public function findDefaultSchema()
     {
-        $sql = <<<SQL
+        $sql = <<<MYSQL
 VALUES CURRENT_SCHEMA
-SQL;
+MYSQL;
 
         return $this->selectValue($sql);
     }
