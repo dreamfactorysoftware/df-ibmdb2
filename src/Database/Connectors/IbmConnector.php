@@ -4,7 +4,6 @@ namespace DreamFactory\Core\IbmDb2\Database\Connectors;
 
 use Illuminate\Database\Connectors\Connector;
 use Illuminate\Database\Connectors\ConnectorInterface;
-use PDO;
 
 class IbmConnector extends Connector implements ConnectorInterface
 {
