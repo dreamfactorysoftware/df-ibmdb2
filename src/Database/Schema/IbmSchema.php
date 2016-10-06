@@ -316,7 +316,7 @@ ORDER BY ordinal_position
 MYSQL;
         } else {
             $sql = <<<MYSQL
-SELECT colname AS colname,
+SELECT colname,
        colno,
        typename,
        CAST(default AS VARCHAR(254)) AS default,
@@ -500,7 +500,7 @@ SELECT SCHEMANAME FROM SYSCAT.SCHEMATA WHERE DEFINERTYPE != 'S' ORDER BY SCHEMAN
 MYSQL;
         }
 
-        $rows = $this->selectColumn($sql);
+        $rows = array_map('trim', $this->selectColumn($sql));
 
         $defaultSchema = $this->getDefaultSchema();
         if (!empty($defaultSchema) && (false === array_search($defaultSchema, $rows))) {
@@ -563,8 +563,8 @@ MYSQL;
         $names = [];
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
-            $schemaName = isset($row['TABSCHEMA']) ? $row['TABSCHEMA'] : '';
-            $tableName = isset($row['TABNAME']) ? $row['TABNAME'] : '';
+            $schemaName = trim(isset($row['TABSCHEMA']) ? $row['TABSCHEMA'] : '');
+            $tableName = trim(isset($row['TABNAME']) ? $row['TABNAME'] : '');
             $isView = (0 === strcasecmp('V', $row['TYPE']));
             if ($addSchema) {
                 $name = $schemaName . '.' . $tableName;
