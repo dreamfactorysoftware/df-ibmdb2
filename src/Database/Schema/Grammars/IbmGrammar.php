@@ -3,10 +3,10 @@
 namespace DreamFactory\Core\IbmDb2\Database\Schema\Grammars;
 
 use Illuminate\Database\Query\Expression;
-use Illuminate\Database\Schema\Grammars\Grammar;
-use Illuminate\Support\Fluent;
 use Illuminate\Database\Connection;
+use Illuminate\Database\Schema\Grammars\Grammar;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Fluent;
 
 class IbmGrammar extends Grammar
 {
@@ -19,11 +19,27 @@ class IbmGrammar extends Grammar
     protected $modifiers = ['Nullable', 'Default', 'Generated', 'Increment', 'StartWith', 'Before', 'ImplicitlyHidden'];
 
     /**
-     * The possible column serials.
+     * The possible column serials
      *
      * @var array
      */
     protected $serials = ['smallInteger', 'integer', 'bigInteger'];
+
+    /**
+     * Wrap a single string in keyword identifiers.
+     *
+     * @param  string $value
+     *
+     * @return string
+     */
+    protected function wrapValue($value)
+    {
+        if ($value === '*') {
+            return $value;
+        }
+
+        return str_replace('"', '""', $value);
+    }
 
     /**
      * Compile the query to determine the list of tables.
@@ -546,16 +562,16 @@ class IbmGrammar extends Grammar
      */
     protected function typeBoolean(Fluent $column)
     {
-        return 'smallint constraint ' .
-        $column->type .
-        '_' .
-        $column->prefix .
-        '_' .
-        $column->name .
-        ' check(' .
-        $column->name .
-        ' in(0,1))' .
-        (is_null($column->default) ? ' default 0' : '');
+        $definition = 'smallint constraint %s_%s_%s check(%s in(0, 1)) %s';
+
+        return sprintf(
+            $definition,
+            $column->type,
+            $column->prefix,
+            $column->name,
+            $column->name,
+            is_null($column->default) ? ' default 0' : ''
+        );
     }
 
     /**
@@ -579,6 +595,10 @@ class IbmGrammar extends Grammar
      */
     protected function typeDate(Fluent $column)
     {
+        if (!$column->nullable) {
+            return 'date default current_date';
+        }
+
         return 'date';
     }
 
@@ -603,6 +623,10 @@ class IbmGrammar extends Grammar
      */
     protected function typeTime(Fluent $column)
     {
+        if (!$column->nullable) {
+            return 'time default current_time';
+        }
+
         return 'time';
     }
 
@@ -615,8 +639,8 @@ class IbmGrammar extends Grammar
      */
     protected function typeTimestamp(Fluent $column)
     {
-        if ($column->useCurrent) {
-            return 'timestamp default CURRENT_TIMESTAMP';
+        if (!$column->nullable) {
+            return 'timestamp default current_timestamp';
         }
 
         return 'timestamp';

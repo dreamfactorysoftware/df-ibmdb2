@@ -23,12 +23,16 @@ class IbmGrammar extends Grammar
     /**
      * Compile a select query into SQL.
      *
-     * @param  Illuminate\Database\Query\Builder
+     * @param Builder $query
      *
      * @return string
      */
     public function compileSelect(Builder $query)
     {
+        if (is_null($query->columns)) {
+            $query->columns = ['*'];
+        }
+
         $components = $this->compileComponents($query);
 
         // If an offset is present on the query, we will need to wrap the query in
@@ -44,8 +48,8 @@ class IbmGrammar extends Grammar
     /**
      * Create a full ANSI offset clause for the query.
      *
-     * @param  Builder $query
-     * @param  array   $components
+     * @param Builder $query
+     * @param array   $components
      *
      * @return string
      */
@@ -66,6 +70,10 @@ class IbmGrammar extends Grammar
         $orderings = $components['orders'];
 
         $columns = (!empty($components['columns']) ? $components['columns'] . ', ' : 'select');
+
+        if ($columns == 'select *, ' && $query->from) {
+            $columns = 'select ' . $this->tablePrefix . $query->from . '.*, ';
+        }
 
         $components['columns'] = $this->compileOver($orderings, $columns);
 
@@ -89,7 +97,8 @@ class IbmGrammar extends Grammar
     /**
      * Compile the over statement for a table expression.
      *
-     * @param  string $orderings
+     * @param string $orderings
+     * @param        $columns
      *
      * @return string
      */
@@ -98,6 +107,11 @@ class IbmGrammar extends Grammar
         return "{$columns} row_number() over ({$orderings}) as row_num";
     }
 
+    /**
+     * @param $query
+     *
+     * @return string
+     */
     protected function compileRowConstraint($query)
     {
         $start = $query->offset + 1;
@@ -127,8 +141,8 @@ class IbmGrammar extends Grammar
     /**
      * Compile the "offset" portions of the query.
      *
-     * @param  Builder $query
-     * @param  int     $offset
+     * @param Builder $query
+     * @param int     $offset
      *
      * @return string
      */
