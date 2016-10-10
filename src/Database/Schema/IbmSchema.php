@@ -491,8 +491,11 @@ MYSQL;
     protected function findSchemaNames()
     {
         if ($this->isISeries()) {
+//            $sql = <<<MYSQL
+//SELECT DISTINCT TABLE_SCHEMA as SCHEMANAME FROM QSYS2.SYSTABLES WHERE SYSTEM_TABLE = 'N' ORDER BY SCHEMANAME;
+//MYSQL;
             $sql = <<<MYSQL
-SELECT SCHEMA as SCHEMANAME FROM QSYS2.SYSTABLES WHERE SYSTEM_TABLE = 'N' ORDER BY SCHEMANAME;
+SELECT SCHEMA_NAME as SCHEMANAME FROM QSYS2.SYSSCHEMAS ORDER BY SCHEMANAME;
 MYSQL;
         } else {
             $sql = <<<MYSQL
@@ -626,6 +629,21 @@ MYSQL;
     }
 
     /**
+     * {@InheritDoc}
+     */
+    public function addForeignKey($name, $table, $columns, $refTable, $refColumns, $delete = null, $update = null)
+    {
+        switch (strtoupper($update)) {
+            case 'CASCADE':
+            case 'SET NULL':
+                $update = null; // not supported on update, only NO ACTION and RESTRICT
+                break;
+        }
+
+        return parent::addForeignKey($name, $table, $columns, $refTable, $refColumns, $delete, null);
+    }
+
+    /**
      * Builds a SQL statement for truncating a DB table.
      *
      * @param string $table the table to be truncated. The name will be properly quoted by the method.
@@ -692,16 +710,27 @@ MYSQL;
     protected function findRoutineNames($type, $schema = '')
     {
         $bindings = [':type' => $type[0]];
-        $where = "OWNERTYPE != 'S' AND ROUTINETYPE = :type";
-        if (!empty($schema)) {
-            $where .= ' AND ROUTINESCHEMA = :schema';
-            $bindings[':schema'] = $schema;
-        }
+        if ($this->isISeries()) {
+            $where = "FUNCTION_ORIGIN != 'S' AND ROUTINE_TYPE = :type";
+            if (!empty($schema)) {
+                $where .= ' AND ROUTINE_SCHEMA = :schema';
+                $bindings[':schema'] = $schema;
+            }
 
-        $sql = <<<MYSQL
+            $sql = <<<MYSQL
+SELECT ROUTINE_NAME AS ROUTINENAME, FUNCTION_TYPE AS FUNCTIONTYPE FROM QSYS2.SYSROUTINES WHERE {$where}
+MYSQL;
+        } else {
+            $where = "OWNERTYPE != 'S' AND ROUTINETYPE = :type";
+            if (!empty($schema)) {
+                $where .= ' AND ROUTINESCHEMA = :schema';
+                $bindings[':schema'] = $schema;
+            }
+
+            $sql = <<<MYSQL
 SELECT ROUTINENAME, RETURN_TYPENAME, FUNCTIONTYPE FROM SYSCAT.ROUTINES WHERE {$where}
 MYSQL;
-
+        }
         $rows = $this->connection->select($sql, $bindings);
 
         $defaultSchema = $this->getDefaultSchema();
@@ -748,16 +777,66 @@ MYSQL;
 
     protected function loadParameters(&$holder)
     {
-        $sql = <<<MYSQL
-SELECT 
-    ORDINAL, ROWTYPE, PARMNAME, TYPENAME, LENGTH, SCALE, DEFAULT
-FROM 
-    SYSCAT.ROUTINEPARMS
-WHERE 
-    ROUTINENAME = '{$holder->name}' AND ROUTINESCHEMA = '{$holder->schemaName}'
+        if ($this->isISeries()) {
+            $sql = <<<MYSQL
+SELECT ORDINAL_POSITION, PARAMETER_MODE, ROW_TYPE, PARAMETER_NAME, DATA_TYPE, NUMERIC_PRECISION, NUMERIC_SCALE, CHARACTER_MAXIMUM_LENGTH, DEFAULT
+FROM QSYS2.SYSPARMS
+WHERE SPECIFIC_NAME = '{$holder->name}' AND SPECIFIC_SCHEMA = '{$holder->schemaName}'
 MYSQL;
 
-        foreach ($this->connection->select($sql) as $row) {
+            $rows = $this->connection->select($sql);
+            foreach ($rows as $row) {
+                $row = array_change_key_case((array)$row, CASE_UPPER);
+                $paramName = array_get($row, 'PARAMETER_NAME');
+                $dbType = array_get($row, 'DATA_TYPE');
+                $simpleType = static::extractSimpleType($dbType);
+                $pos = intval(array_get($row, 'ORDINAL_POSITION'));
+                $length = (isset($row['CHARACTER_MAXIMUM_LENGTH']) ? intval(array_get($row, 'CHARACTER_MAXIMUM_LENGTH')) : null);
+                $precision = (isset($row['NUMERIC_PRECISION']) ? intval(array_get($row, 'NUMERIC_PRECISION')) : null);
+                $scale = (isset($row['NUMERIC_SCALE']) ? intval(array_get($row, 'NUMERIC_SCALE')) : null);
+                switch (strtoupper(array_get($row, 'ROW_TYPE', ''))) {
+                    case 'P':
+                        $paramType = array_get($row, 'PARAMETER_MODE');
+                        $holder->addParameter(new ParameterSchema(
+                            [
+                                'name'          => $paramName,
+                                'position'      => $pos,
+                                'param_type'    => $paramType,
+                                'type'          => $simpleType,
+                                'db_type'       => $dbType,
+                                'length'        => $length,
+                                'precision'     => $precision,
+                                'scale'         => $scale,
+                                'default_value' => array_get($row, 'DEFAULT'),
+                            ]
+                        ));
+                        break;
+                    case 'R':
+                    case 'C':
+                        $holder->returnSchema[] = [
+                            'name'      => $paramName,
+                            'position'  => $pos,
+                            'type'      => $simpleType,
+                            'db_type'   => $dbType,
+                            'length'    => $length,
+                            'precision' => $precision,
+                            'scale'     => $scale,
+                        ];
+                        break;
+                    default:
+                        break;
+                }
+            }
+        } else {
+            $sql = <<<MYSQL
+SELECT ORDINAL, ROWTYPE, PARMNAME, TYPENAME, LENGTH, SCALE, DEFAULT
+FROM SYSCAT.ROUTINEPARMS
+WHERE ROUTINENAME = '{$holder->name}' AND ROUTINESCHEMA = '{$holder->schemaName}'
+MYSQL;
+        }
+
+        $rows = $this->connection->select($sql);
+        foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $paramName = array_get($row, 'PARMNAME');
             $dbType = array_get($row, 'TYPENAME');

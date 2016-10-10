@@ -4,14 +4,16 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Added
+- Support for i-Series stored procedures
 
 ### Changed
 
 ### Fixed
+- Creating foreign keys does not support cascading 'on update' setting
 
 ## [0.5.0] - 2016-10-03
 ### Changed
-- Upgrade to latest core and sqldb repos.
+- Upgrade to latest core and sqldb repos
 
 ## [0.4.0] - 2016-08-21
 ### Changed
@@ -19,7 +21,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [0.3.1] - 2016-07-08
 ### Added
-- DF-636 #resolve #comment Adding ability using 'ids' parameter to return the schema of a stored procedure or function.
+- DF-636 #resolve #comment Adding ability using 'ids' parameter to return the schema of a stored procedure or function
 
 ### Changed
 - Changes for PHP7
