@@ -709,8 +709,8 @@ MYSQL;
 
     protected function findRoutineNames($type, $schema = '')
     {
-        $bindings = [':type' => $type[0]];
         if ($this->isISeries()) {
+            $bindings = [':type' => $type];
             $where = "FUNCTION_ORIGIN != 'S' AND ROUTINE_TYPE = :type";
             if (!empty($schema)) {
                 $where .= ' AND ROUTINE_SCHEMA = :schema';
