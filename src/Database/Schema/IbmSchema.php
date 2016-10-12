@@ -394,8 +394,8 @@ SELECT
   parent.table_schema AS referenced_table_schema,
   parent.table_name AS referenced_table_name,
   parent.column_name AS referenced_column_name,
-  child.table_schema AS table_schema
-  child.table_name AS table_name
+  child.table_schema AS table_schema,
+  child.table_name AS table_name,
   child.column_name AS column_name
 FROM qsys2.syskeycst child
 INNER JOIN qsys2.sysrefcst crossref
