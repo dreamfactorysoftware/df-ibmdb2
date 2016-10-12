@@ -711,6 +711,7 @@ MYSQL;
     {
         if ($this->isISeries()) {
             $bindings = [':type' => $type];
+            //review for SYSTEM owned routines. There are SYSTEM routines without this flag set.
             $where = "FUNCTION_ORIGIN != 'S' AND ROUTINE_TYPE = :type";
             if (!empty($schema)) {
                 $where .= ' AND ROUTINE_SCHEMA = :schema';
