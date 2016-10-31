@@ -276,27 +276,13 @@ class IbmSchema extends Schema
     }
 
     /**
-     * @inheritdoc
-     */
-    protected function loadTable(TableSchema $table)
-    {
-        if (!$this->findColumns($table)) {
-            return null;
-        }
-
-        $this->findConstraints($table);
-
-        return $table;
-    }
-
-    /**
      * Collects the table column metadata.
      *
      * @param TableSchema $table the table metadata
      *
      * @return boolean whether the table exists in the database
      */
-    protected function findColumns($table)
+    protected function findColumns(TableSchema $table)
     {
         $schema = (!empty($table->schemaName)) ? $table->schemaName : $this->getDefaultSchema();
 
@@ -341,7 +327,7 @@ MYSQL;
             $table->addColumn($c);
         }
 
-        return true;
+        $this->findPrimaryKey($table);
     }
 
     /**
@@ -380,14 +366,10 @@ MYSQL;
     }
 
     /**
-     * Collects the primary and foreign key column details for the given table.
-     *
-     * @param TableSchema $table the table metadata
+     * @inheritdoc
      */
-    protected function findConstraints($table)
+    protected function findTableReferences()
     {
-        $this->findPrimaryKey($table);
-
         if ($this->isISeries()) {
             $sql = <<<MYSQL
 SELECT
@@ -419,9 +401,7 @@ INNER JOIN syscat.keycoluse AS pk ON pk.constname = syscat.references.refkeyname
 MYSQL;
         }
 
-        $constraints = $this->connection->select($sql);
-
-        $this->buildTableRelations($table, $constraints);
+        return $this->connection->select($sql);
     }
 
     /**
