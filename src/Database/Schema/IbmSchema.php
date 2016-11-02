@@ -276,11 +276,7 @@ class IbmSchema extends Schema
     }
 
     /**
-     * Collects the table column metadata.
-     *
-     * @param TableSchema $table the table metadata
-     *
-     * @return boolean whether the table exists in the database
+     * @inheritdoc
      */
     protected function findColumns(TableSchema $table)
     {
@@ -318,16 +314,14 @@ MYSQL;
 
         $columns = $this->connection->select($sql, [':table' => $table->tableName, ':schema' => $schema]);
 
-        if (empty($columns)) {
-            return false;
-        }
+        if (!empty($columns)) {
+            foreach ($columns as $column) {
+                $c = $this->createColumn(array_change_key_case((array)$column, CASE_UPPER));
+                $table->addColumn($c);
+            }
 
-        foreach ($columns as $column) {
-            $c = $this->createColumn(array_change_key_case((array)$column, CASE_UPPER));
-            $table->addColumn($c);
+            $this->findPrimaryKey($table);
         }
-
-        $this->findPrimaryKey($table);
     }
 
     /**
@@ -376,8 +370,8 @@ SELECT
   parent.table_schema AS referenced_table_schema,
   parent.table_name AS referenced_table_name,
   parent.column_name AS referenced_column_name,
-  child.table_schema AS table_schema
-  child.table_name AS table_name
+  child.table_schema AS table_schema,
+  child.table_name AS table_name,
   child.column_name AS column_name
 FROM qsys2.syskeycst child
 INNER JOIN qsys2.sysrefcst crossref
@@ -408,8 +402,6 @@ MYSQL;
      * Gets the primary key column(s) details for the given table.
      *
      * @param TableSchema $table table
-     *
-     * @return mixed primary keys (null if no pk, string if only 1 column pk, or array if composite pk)
      */
     protected function findPrimaryKey($table)
     {
@@ -689,8 +681,8 @@ MYSQL;
 
     protected function findRoutineNames($type, $schema = '')
     {
-        $bindings = [':type' => $type[0]];
         if ($this->isISeries()) {
+            $bindings = [':type' => $type];
             $where = "FUNCTION_ORIGIN != 'S' AND ROUTINE_TYPE = :type";
             if (!empty($schema)) {
                 $where .= ' AND ROUTINE_SCHEMA = :schema';
@@ -701,6 +693,7 @@ MYSQL;
 SELECT ROUTINE_NAME AS ROUTINENAME, FUNCTION_TYPE AS FUNCTIONTYPE FROM QSYS2.SYSROUTINES WHERE {$where}
 MYSQL;
         } else {
+            $bindings = [':type' => $type[0]];
             $where = "OWNERTYPE != 'S' AND ROUTINETYPE = :type";
             if (!empty($schema)) {
                 $where .= ' AND ROUTINESCHEMA = :schema';
@@ -771,7 +764,8 @@ MYSQL;
                 $dbType = array_get($row, 'DATA_TYPE');
                 $simpleType = static::extractSimpleType($dbType);
                 $pos = intval(array_get($row, 'ORDINAL_POSITION'));
-                $length = (isset($row['CHARACTER_MAXIMUM_LENGTH']) ? intval(array_get($row, 'CHARACTER_MAXIMUM_LENGTH')) : null);
+                $length = (isset($row['CHARACTER_MAXIMUM_LENGTH']) ? intval(array_get($row,
+                    'CHARACTER_MAXIMUM_LENGTH')) : null);
                 $precision = (isset($row['NUMERIC_PRECISION']) ? intval(array_get($row, 'NUMERIC_PRECISION')) : null);
                 $scale = (isset($row['NUMERIC_SCALE']) ? intval(array_get($row, 'NUMERIC_SCALE')) : null);
                 switch (strtoupper(array_get($row, 'ROW_TYPE', ''))) {
