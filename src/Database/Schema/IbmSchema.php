@@ -376,8 +376,8 @@ SELECT
   parent.table_schema AS referenced_table_schema,
   parent.table_name AS referenced_table_name,
   parent.column_name AS referenced_column_name,
-  child.table_schema AS table_schema
-  child.table_name AS table_name
+  child.table_schema AS table_schema,
+  child.table_name AS table_name,
   child.column_name AS column_name
 FROM qsys2.syskeycst child
 INNER JOIN qsys2.sysrefcst crossref
@@ -689,8 +689,9 @@ MYSQL;
 
     protected function findRoutineNames($type, $schema = '')
     {
-        $bindings = [':type' => $type[0]];
         if ($this->isISeries()) {
+            $bindings = [':type' => $type];
+            //review for SYSTEM owned routines. There are SYSTEM routines without this flag set.
             $where = "FUNCTION_ORIGIN != 'S' AND ROUTINE_TYPE = :type";
             if (!empty($schema)) {
                 $where .= ' AND ROUTINE_SCHEMA = :schema';
