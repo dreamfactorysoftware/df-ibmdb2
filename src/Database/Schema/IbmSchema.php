@@ -64,6 +64,16 @@ class IbmSchema extends Schema
         ];
     }
 
+    protected static function isUndiscoverableType($type)
+    {
+        switch ($type) {
+            case DbSimpleTypes::TYPE_BOOLEAN:
+                return true;
+        }
+
+        return parent::isUndiscoverableType($type);
+    }
+
     protected function translateSimpleColumnTypes(array &$info)
     {
         // override this in each schema class
@@ -899,38 +909,35 @@ MYSQL;
     protected function doRoutineBinding($statement, array $paramSchemas, array &$values)
     {
 //        if ($this->isISeries()) {
-            foreach ($paramSchemas as $key => $paramSchema) {
-                $pdoType = $this->getPdoType($paramSchema->type);
-                switch ($paramSchema->paramType) {
-                    case 'IN':
-                        $this->bindValue($statement, ':' . $paramSchema->name, array_get($values, $key));
-                        break;
-                    case 'INOUT':
-                        if (empty($values[$key]) && (\PDO::PARAM_STR === $pdoType)) {
-                            $values[$key] = str_repeat(" ", $paramSchema->length);
-                        }
-                        $this->bindParam(
-                            $statement, ':' . $paramSchema->name,
-                            $values[$key],
-                            $pdoType | \PDO::PARAM_INPUT_OUTPUT,
-                            $paramSchema->length
-                        );
-                        break;
-                    case 'OUT':
-                        if (empty($values[$key]) && (\PDO::PARAM_STR === $pdoType)) {
-                            $values[$key] = str_repeat(" ", $paramSchema->length);
-                        }
-                        $this->bindParam(
-                            $statement, ':' . $paramSchema->name,
-                            $values[$key],
-                            $pdoType,
-                            $paramSchema->length
-                        );
-                        break;
-                }
+        foreach ($paramSchemas as $key => $paramSchema) {
+            $pdoType = $this->getPdoType($paramSchema->type);
+            switch ($paramSchema->paramType) {
+                case 'IN':
+                    $this->bindValue($statement, ':' . $paramSchema->name, array_get($values, $key));
+                    break;
+                case 'INOUT':
+                    if (empty($values[$key]) && (\PDO::PARAM_STR === $pdoType)) {
+                        $values[$key] = str_repeat(" ", $paramSchema->length);
+                    }
+                    $this->bindParam(
+                        $statement, ':' . $paramSchema->name,
+                        $values[$key],
+                        $pdoType | \PDO::PARAM_INPUT_OUTPUT,
+                        $paramSchema->length
+                    );
+                    break;
+                case 'OUT':
+                    if (empty($values[$key]) && (\PDO::PARAM_STR === $pdoType)) {
+                        $values[$key] = str_repeat(" ", $paramSchema->length);
+                    }
+                    $this->bindParam(
+                        $statement, ':' . $paramSchema->name,
+                        $values[$key],
+                        $pdoType,
+                        $paramSchema->length
+                    );
+                    break;
             }
-//        } else {
-//            parent::doRoutineBinding($statement, $paramSchemas, $values);
-//        }
+        }
     }
 }
