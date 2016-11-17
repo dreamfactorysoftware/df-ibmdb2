@@ -8,6 +8,7 @@ use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Database\Schema\RoutineSchema;
 use DreamFactory\Core\Database\Schema\Schema;
 use DreamFactory\Core\Database\Schema\TableSchema;
+use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Enums\DbSimpleTypes;
 
 /**
@@ -15,6 +16,11 @@ use DreamFactory\Core\Enums\DbSimpleTypes;
  */
 class IbmSchema extends Schema
 {
+    /**
+     * Underlying database provides field-level schema, i.e. SQL (true) vs NoSQL (false)
+     */
+    const PROVIDES_FIELD_SCHEMA = true;
+
     /**
      * @const string Quoting characters
      */
@@ -25,25 +31,47 @@ class IbmSchema extends Schema
     /**
      * @type boolean
      */
-    private $isIseries = null;
+    private $isISeries = null;
 
     private function isISeries()
     {
-        if ($this->isIseries !== null) {
-            return $this->isIseries;
-        }
-        try {
-            /** @noinspection SqlDialectInspection */
-            $sql = 'SELECT * FROM QSYS2.SYSTABLES';
-            $stmt = $this->connection->select($sql);
-            $this->isIseries = (bool)$stmt;
+        if ($this->isISeries === null) {
+            try {
+                /** @noinspection SqlDialectInspection */
+                $sql = 'SELECT TABLE_NAME FROM QSYS2.SYSTABLES LIMIT 1';
+                $stmt = $this->connection->select($sql);
+                $this->isISeries = (bool)$stmt;
 
-            return $this->isIseries;
-        } catch (\Exception $ex) {
-            $this->isIseries = false;
-
-            return $this->isIseries;
+                return $this->isISeries;
+            } catch (\Exception $ex) {
+                $this->isISeries = false;
+            }
         }
+
+        return $this->isISeries;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function getSupportedResourceTypes()
+    {
+        return [
+            DbResourceTypes::TYPE_TABLE,
+            DbResourceTypes::TYPE_VIEW,
+            DbResourceTypes::TYPE_PROCEDURE,
+            DbResourceTypes::TYPE_FUNCTION
+        ];
+    }
+
+    protected static function isUndiscoverableType($type)
+    {
+        switch ($type) {
+            case DbSimpleTypes::TYPE_BOOLEAN:
+                return true;
+        }
+
+        return parent::isUndiscoverableType($type);
     }
 
     protected function translateSimpleColumnTypes(array &$info)
@@ -278,27 +306,10 @@ class IbmSchema extends Schema
     /**
      * @inheritdoc
      */
-    protected function loadTable(TableSchema $table)
-    {
-        if (!$this->findColumns($table)) {
-            return null;
-        }
-
-        $this->findConstraints($table);
-
-        return $table;
-    }
-
-    /**
-     * Collects the table column metadata.
-     *
-     * @param TableSchema $table the table metadata
-     *
-     * @return boolean whether the table exists in the database
-     */
-    protected function findColumns($table)
+    protected function findColumns(TableSchema $table)
     {
         $schema = (!empty($table->schemaName)) ? $table->schemaName : $this->getDefaultSchema();
+        $params = [':table' => $table->tableName, ':schema' => $schema];
 
         if ($this->isISeries()) {
             $sql = <<<MYSQL
@@ -316,7 +327,7 @@ ORDER BY ordinal_position
 MYSQL;
         } else {
             $sql = <<<MYSQL
-SELECT colname AS colname,
+SELECT colname,
        colno,
        typename,
        CAST(default AS VARCHAR(254)) AS default,
@@ -330,18 +341,42 @@ ORDER BY colno
 MYSQL;
         }
 
-        $columns = $this->connection->select($sql, [':table' => $table->tableName, ':schema' => $schema]);
+        if (!empty($columns = $this->connection->select($sql, $params))) {
+            if ($this->isISeries()) {
+                $sql = <<<MYSQL
+SELECT column_name AS colnames
+FROM qsys2.syscst 
+INNER JOIN qsys2.syskeycst
+  ON qsys2.syscst.constraint_name = qsys2.syskeycst.constraint_name
+ AND qsys2.syscst.table_schema = qsys2.syskeycst.table_schema 
+ AND qsys2.syscst.table_name = qsys2.syskeycst.table_name
+WHERE qsys2.syscst.constraint_type = 'PRIMARY KEY'
+  AND qsys2.syscst.table_name = :table AND qsys2.syscst.table_schema = :schema
+MYSQL;
+            } else {
+                $sql = <<<MYSQL
+SELECT colnames AS colnames
+FROM syscat.indexes
+WHERE uniquerule = 'P' AND tabname = :table AND tabschema = :schema
+MYSQL;
+            }
 
-        if (empty($columns)) {
-            return false;
+            $indexes = $this->connection->select($sql, $params);
+            foreach ($indexes as $index) {
+                $index = array_change_key_case((array)$index, CASE_LOWER);
+                $names = explode("+", ltrim($index['colnames'], '+'));
+                foreach ($names as $name) {
+                    foreach ($columns as &$column) {
+                        $column = array_change_key_case((array)$column, CASE_LOWER);
+                        if ($name === array_get($column, 'colname')) {
+                            $column['is_primary_key'] = true;
+                        }
+                    }
+                }
+            }
         }
 
-        foreach ($columns as $column) {
-            $c = $this->createColumn(array_change_key_case((array)$column, CASE_UPPER));
-            $table->addColumn($c);
-        }
-
-        return true;
+        return $columns;
     }
 
     /**
@@ -353,26 +388,27 @@ MYSQL;
      */
     protected function createColumn($column)
     {
-        $c = new ColumnSchema(['name' => $column['COLNAME']]);
+        $c = new ColumnSchema(['name' => $column['colname']]);
         $c->rawName = $this->quoteColumnName($c->name);
-        $c->allowNull = ($column['NULLS'] == 'Y');
-        $c->autoIncrement = ($column['IDENTITY'] == 'Y');
-        $c->dbType = $column['TYPENAME'];
+        $c->allowNull = ($column['nulls'] == 'Y');
+        $c->autoIncrement = ($column['identity'] == 'Y');
+        $c->isPrimaryKey = array_get($column, 'is_primary_key', false);
+        $c->dbType = $column['typename'];
 
-        if (preg_match('/(varchar|character|clob|graphic|binary|blob)/i', $column['TYPENAME'])) {
-            $c->size = $c->precision = $column['LENGTH'];
-        } elseif (preg_match('/(decimal|double|real)/i', $column['TYPENAME'])) {
-            $c->size = $c->precision = $column['LENGTH'];
-            $c->scale = $column['SCALE'];
+        if (preg_match('/(varchar|character|clob|graphic|binary|blob)/i', $c->dbType)) {
+            $c->size = $c->precision = $column['length'];
+        } elseif (preg_match('/(decimal|double|real)/i', $c->dbType)) {
+            $c->size = $c->precision = $column['length'];
+            $c->scale = $column['scale'];
         }
 
-        $c->fixedLength = $this->extractFixedLength($column['TYPENAME']);
-        $c->supportsMultibyte = $this->extractMultiByteSupport($column['TYPENAME']);
-        $this->extractType($c, $column['TYPENAME']);
-        if (is_string($column['DEFAULT'])) {
-            $column['DEFAULT'] = trim($column['DEFAULT'], '\'');
+        $c->fixedLength = $this->extractFixedLength($c->dbType);
+        $c->supportsMultibyte = $this->extractMultiByteSupport($c->dbType);
+        $this->extractType($c, $c->dbType);
+        if (is_string($column['default'])) {
+            $column['default'] = trim($column['default'], '\'');
         }
-        $default = ($column['DEFAULT'] == "NULL") ? null : $column['DEFAULT'];
+        $default = ($column['default'] == "NULL") ? null : $column['default'];
 
         $this->extractDefault($c, $default);
 
@@ -380,22 +416,18 @@ MYSQL;
     }
 
     /**
-     * Collects the primary and foreign key column details for the given table.
-     *
-     * @param TableSchema $table the table metadata
+     * @inheritdoc
      */
-    protected function findConstraints($table)
+    protected function findTableReferences()
     {
-        $this->findPrimaryKey($table);
-
         if ($this->isISeries()) {
             $sql = <<<MYSQL
 SELECT
   parent.table_schema AS referenced_table_schema,
   parent.table_name AS referenced_table_name,
   parent.column_name AS referenced_column_name,
-  child.table_schema AS table_schema
-  child.table_name AS table_name
+  child.table_schema AS table_schema,
+  child.table_name AS table_name,
   child.column_name AS column_name
 FROM qsys2.syskeycst child
 INNER JOIN qsys2.sysrefcst crossref
@@ -419,80 +451,17 @@ INNER JOIN syscat.keycoluse AS pk ON pk.constname = syscat.references.refkeyname
 MYSQL;
         }
 
-        $constraints = $this->connection->select($sql);
-
-        $this->buildTableRelations($table, $constraints);
-    }
-
-    /**
-     * Gets the primary key column(s) details for the given table.
-     *
-     * @param TableSchema $table table
-     *
-     * @return mixed primary keys (null if no pk, string if only 1 column pk, or array if composite pk)
-     */
-    protected function findPrimaryKey($table)
-    {
-        $schema = (!empty($table->schemaName)) ? $table->schemaName : $this->getDefaultSchema();
-
-        if ($this->isISeries()) {
-            $sql = <<<MYSQL
-SELECT column_name As colnames
-FROM qsys2.syscst 
-INNER JOIN qsys2.syskeycst
-  ON qsys2.syscst.constraint_name = qsys2.syskeycst.constraint_name
- AND qsys2.syscst.table_schema = qsys2.syskeycst.table_schema 
- AND qsys2.syscst.table_name = qsys2.syskeycst.table_name
-WHERE qsys2.syscst.constraint_type = 'PRIMARY KEY'
-  AND qsys2.syscst.table_name = :table AND qsys2.syscst.table_schema = :schema
-MYSQL;
-        } else {
-            $sql = <<<MYSQL
-SELECT colnames AS colnames
-FROM syscat.indexes
-WHERE uniquerule = 'P'
-  AND tabname = :table AND tabschema = :schema
-MYSQL;
-        }
-
-        $indexes = $this->connection->select($sql, [':table' => $table->tableName, ':schema' => $schema]);
-        foreach ($indexes as $index) {
-            $index = array_change_key_case((array)$index, CASE_UPPER);
-            $columns = explode("+", ltrim($index['COLNAMES'], '+'));
-            foreach ($columns as $colname) {
-                $column = $table->getColumn($colname);
-                if (isset($column)) {
-                    $column->isPrimaryKey = true;
-                    if ((DbSimpleTypes::TYPE_INTEGER === $column->type) && $column->autoIncrement) {
-                        $column->type = DbSimpleTypes::TYPE_ID;
-                    }
-                    if ($table->primaryKey === null) {
-                        $table->primaryKey = $colname;
-                    } elseif (is_string($table->primaryKey)) {
-                        $table->primaryKey = [$table->primaryKey, $colname];
-                    } else {
-                        $table->primaryKey[] = $colname;
-                    }
-                    // update the column in the table
-                    $table->addColumn($column);
-                }
-            }
-        }
-
-        /* @var $c ColumnSchema */
-        foreach ($table->getColumns() as $c) {
-            if ($c->autoIncrement && $c->isPrimaryKey) {
-                $table->sequenceName = $c->rawName;
-                break;
-            }
-        }
+        return $this->connection->select($sql);
     }
 
     protected function findSchemaNames()
     {
         if ($this->isISeries()) {
+//            $sql = <<<MYSQL
+//SELECT DISTINCT TABLE_SCHEMA as SCHEMANAME FROM QSYS2.SYSTABLES WHERE SYSTEM_TABLE = 'N' ORDER BY SCHEMANAME;
+//MYSQL;
             $sql = <<<MYSQL
-SELECT SCHEMA as SCHEMANAME FROM QSYS2.SYSTABLES WHERE SYSTEM_TABLE = 'N' ORDER BY SCHEMANAME;
+SELECT SCHEMA_NAME as SCHEMANAME FROM QSYS2.SYSSCHEMAS ORDER BY SCHEMANAME;
 MYSQL;
         } else {
             $sql = <<<MYSQL
@@ -500,7 +469,7 @@ SELECT SCHEMANAME FROM SYSCAT.SCHEMATA WHERE DEFINERTYPE != 'S' ORDER BY SCHEMAN
 MYSQL;
         }
 
-        $rows = $this->selectColumn($sql);
+        $rows = array_map('trim', $this->selectColumn($sql));
 
         $defaultSchema = $this->getDefaultSchema();
         if (!empty($defaultSchema) && (false === array_search($defaultSchema, $rows))) {
@@ -563,8 +532,8 @@ MYSQL;
         $names = [];
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
-            $schemaName = isset($row['TABSCHEMA']) ? $row['TABSCHEMA'] : '';
-            $tableName = isset($row['TABNAME']) ? $row['TABNAME'] : '';
+            $schemaName = trim(isset($row['TABSCHEMA']) ? $row['TABSCHEMA'] : '');
+            $tableName = trim(isset($row['TABNAME']) ? $row['TABNAME'] : '');
             $isView = (0 === strcasecmp('V', $row['TYPE']));
             if ($addSchema) {
                 $name = $schemaName . '.' . $tableName;
@@ -623,6 +592,21 @@ MYSQL;
             $tableName = $tableInfo['name'];
             $db->statement("SET INTEGRITY FOR $tableName ALL IMMEDIATE $enable");
         }
+    }
+
+    /**
+     * {@InheritDoc}
+     */
+    public function addForeignKey($name, $table, $columns, $refTable, $refColumns, $delete = null, $update = null)
+    {
+        switch (strtoupper($update)) {
+            case 'CASCADE':
+            case 'SET NULL':
+                $update = null; // not supported on update, only NO ACTION and RESTRICT
+                break;
+        }
+
+        return parent::addForeignKey($name, $table, $columns, $refTable, $refColumns, $delete, null);
     }
 
     /**
@@ -691,17 +675,29 @@ MYSQL;
 
     protected function findRoutineNames($type, $schema = '')
     {
-        $bindings = [':type' => $type[0]];
-        $where = "OWNERTYPE != 'S' AND ROUTINETYPE = :type";
-        if (!empty($schema)) {
-            $where .= ' AND ROUTINESCHEMA = :schema';
-            $bindings[':schema'] = $schema;
-        }
+        if ($this->isISeries()) {
+            $bindings = [':type' => $type];
+            $where = "FUNCTION_ORIGIN != 'S' AND ROUTINE_TYPE = :type";
+            if (!empty($schema)) {
+                $where .= ' AND ROUTINE_SCHEMA = :schema';
+                $bindings[':schema'] = $schema;
+            }
 
-        $sql = <<<MYSQL
+            $sql = <<<MYSQL
+SELECT ROUTINE_NAME AS ROUTINENAME, FUNCTION_TYPE AS FUNCTIONTYPE FROM QSYS2.SYSROUTINES WHERE {$where}
+MYSQL;
+        } else {
+            $bindings = [':type' => $type[0]];
+            $where = "OWNERTYPE != 'S' AND ROUTINETYPE = :type";
+            if (!empty($schema)) {
+                $where .= ' AND ROUTINESCHEMA = :schema';
+                $bindings[':schema'] = $schema;
+            }
+
+            $sql = <<<MYSQL
 SELECT ROUTINENAME, RETURN_TYPENAME, FUNCTIONTYPE FROM SYSCAT.ROUTINES WHERE {$where}
 MYSQL;
-
+        }
         $rows = $this->connection->select($sql, $bindings);
 
         $defaultSchema = $this->getDefaultSchema();
@@ -748,16 +744,67 @@ MYSQL;
 
     protected function loadParameters(&$holder)
     {
-        $sql = <<<MYSQL
-SELECT 
-    ORDINAL, ROWTYPE, PARMNAME, TYPENAME, LENGTH, SCALE, DEFAULT
-FROM 
-    SYSCAT.ROUTINEPARMS
-WHERE 
-    ROUTINENAME = '{$holder->name}' AND ROUTINESCHEMA = '{$holder->schemaName}'
+        if ($this->isISeries()) {
+            $sql = <<<MYSQL
+SELECT ORDINAL_POSITION, PARAMETER_MODE, ROW_TYPE, PARAMETER_NAME, DATA_TYPE, NUMERIC_PRECISION, NUMERIC_SCALE, CHARACTER_MAXIMUM_LENGTH, DEFAULT
+FROM QSYS2.SYSPARMS
+WHERE SPECIFIC_NAME = '{$holder->name}' AND SPECIFIC_SCHEMA = '{$holder->schemaName}'
 MYSQL;
 
-        foreach ($this->connection->select($sql) as $row) {
+            $rows = $this->connection->select($sql);
+            foreach ($rows as $row) {
+                $row = array_change_key_case((array)$row, CASE_UPPER);
+                $paramName = array_get($row, 'PARAMETER_NAME');
+                $dbType = array_get($row, 'DATA_TYPE');
+                $simpleType = static::extractSimpleType($dbType);
+                $pos = intval(array_get($row, 'ORDINAL_POSITION'));
+                $length = (isset($row['CHARACTER_MAXIMUM_LENGTH']) ? intval(array_get($row,
+                    'CHARACTER_MAXIMUM_LENGTH')) : null);
+                $precision = (isset($row['NUMERIC_PRECISION']) ? intval(array_get($row, 'NUMERIC_PRECISION')) : null);
+                $scale = (isset($row['NUMERIC_SCALE']) ? intval(array_get($row, 'NUMERIC_SCALE')) : null);
+                switch (strtoupper(array_get($row, 'ROW_TYPE', ''))) {
+                    case 'P':
+                        $paramType = array_get($row, 'PARAMETER_MODE');
+                        $holder->addParameter(new ParameterSchema(
+                            [
+                                'name'          => $paramName,
+                                'position'      => $pos,
+                                'param_type'    => $paramType,
+                                'type'          => $simpleType,
+                                'db_type'       => $dbType,
+                                'length'        => $length,
+                                'precision'     => $precision,
+                                'scale'         => $scale,
+                                'default_value' => array_get($row, 'DEFAULT'),
+                            ]
+                        ));
+                        break;
+                    case 'R':
+                    case 'C':
+                        $holder->returnSchema[] = [
+                            'name'      => $paramName,
+                            'position'  => $pos,
+                            'type'      => $simpleType,
+                            'db_type'   => $dbType,
+                            'length'    => $length,
+                            'precision' => $precision,
+                            'scale'     => $scale,
+                        ];
+                        break;
+                    default:
+                        break;
+                }
+            }
+        } else {
+            $sql = <<<MYSQL
+SELECT ORDINAL, ROWTYPE, PARMNAME, TYPENAME, LENGTH, SCALE, DEFAULT
+FROM SYSCAT.ROUTINEPARMS
+WHERE ROUTINENAME = '{$holder->name}' AND ROUTINESCHEMA = '{$holder->schemaName}'
+MYSQL;
+        }
+
+        $rows = $this->connection->select($sql);
+        foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $paramName = array_get($row, 'PARMNAME');
             $dbType = array_get($row, 'TYPENAME');
@@ -856,6 +903,41 @@ MYSQL;
             default:
                 return parent::getFunctionStatement($routine, $param_schemas, $values) . ' FROM SYSIBM.SYSDUMMY1';
                 break;
+        }
+    }
+
+    protected function doRoutineBinding($statement, array $paramSchemas, array &$values)
+    {
+//        if ($this->isISeries()) {
+        foreach ($paramSchemas as $key => $paramSchema) {
+            $pdoType = $this->getPdoType($paramSchema->type);
+            switch ($paramSchema->paramType) {
+                case 'IN':
+                    $this->bindValue($statement, ':' . $paramSchema->name, array_get($values, $key));
+                    break;
+                case 'INOUT':
+                    if (empty($values[$key]) && (\PDO::PARAM_STR === $pdoType)) {
+                        $values[$key] = str_repeat(" ", $paramSchema->length);
+                    }
+                    $this->bindParam(
+                        $statement, ':' . $paramSchema->name,
+                        $values[$key],
+                        $pdoType | \PDO::PARAM_INPUT_OUTPUT,
+                        $paramSchema->length
+                    );
+                    break;
+                case 'OUT':
+                    if (empty($values[$key]) && (\PDO::PARAM_STR === $pdoType)) {
+                        $values[$key] = str_repeat(" ", $paramSchema->length);
+                    }
+                    $this->bindParam(
+                        $statement, ':' . $paramSchema->name,
+                        $values[$key],
+                        $pdoType,
+                        $paramSchema->length
+                    );
+                    break;
+            }
         }
     }
 }

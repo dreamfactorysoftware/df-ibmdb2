@@ -18,11 +18,9 @@ class IbmConnector extends Connector implements ConnectorInterface
         $dsn = $this->getDsn($config);
 
         $options = $this->getOptions($config);
-
         $connection = $this->createConnection($dsn, $config, $options);
 
-        if (isset($config['schema']))
-        {
+        if (isset($config['schema'])) {
             $schema = $config['schema'];
 
             $connection->prepare("set schema $schema")->execute();

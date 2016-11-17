@@ -17,6 +17,13 @@ class IbmConnection extends Connection
      */
     protected $defaultSchema;
 
+    /**
+     * The name of the current schema in use.
+     *
+     * @var string
+     */
+    protected $currentSchema;
+
     public function __construct(PDO $pdo, $database = '', $tablePrefix = '', array $config = [])
     {
         parent::__construct($pdo, $database, $tablePrefix, $config);
@@ -47,6 +54,8 @@ class IbmConnection extends Connection
 
     /**
      * Set the name of the current schema.
+     *
+     * @param $schema
      *
      * @return string
      */

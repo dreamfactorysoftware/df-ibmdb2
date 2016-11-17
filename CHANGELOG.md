@@ -4,14 +4,23 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Added
-
 ### Changed
+### Fixed
+
+## [0.6.0] - 2016-11-17
+### Changed
+- Virtual relationships rework to support all relationship types
+- DB base class changes to support field configuration across all database types.
 
 ### Fixed
+- Creating foreign keys does not support cascading 'on update' setting
+- Schema and Table names seem to come back from driver padded to 8 characters, trim for usage.
+- ISeries support for procedures, fix foreign key designation
+- Boolean type handling
 
 ## [0.5.0] - 2016-10-03
 ### Changed
-- Upgrade to latest core and sqldb repos.
+- Upgrade to latest core and sqldb repos
 
 ## [0.4.0] - 2016-08-21
 ### Changed
@@ -19,7 +28,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [0.3.1] - 2016-07-08
 ### Added
-- DF-636 #resolve #comment Adding ability using 'ids' parameter to return the schema of a stored procedure or function.
+- DF-636 #resolve #comment Adding ability using 'ids' parameter to return the schema of a stored procedure or function
 
 ### Changed
 - Changes for PHP7
@@ -28,7 +37,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.3.0 - 2016-05-27
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.5.0...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.6.0...HEAD
+[0.6.0]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.3.1...0.4.0
 [0.3.1]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.3.0...0.3.1
