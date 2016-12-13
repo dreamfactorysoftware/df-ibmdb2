@@ -2,7 +2,7 @@
 namespace DreamFactory\Core\IbmDb2;
 
 use DreamFactory\Core\Components\ServiceDocBuilder;
-use DreamFactory\Core\Database\DbSchemaExtensions;
+use DreamFactory\Core\Components\DbSchemaExtensions;
 use DreamFactory\Core\Enums\ServiceTypeGroups;
 use DreamFactory\Core\IbmDb2\Database\Connectors\IbmConnector;
 use DreamFactory\Core\IbmDb2\Database\IbmConnection;

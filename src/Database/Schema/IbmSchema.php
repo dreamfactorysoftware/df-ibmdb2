@@ -6,7 +6,7 @@ use DreamFactory\Core\Database\Schema\FunctionSchema;
 use DreamFactory\Core\Database\Schema\ParameterSchema;
 use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Database\Schema\RoutineSchema;
-use DreamFactory\Core\Database\Schema\Schema;
+use DreamFactory\Core\Database\Components\Schema;
 use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Enums\DbSimpleTypes;
@@ -389,7 +389,7 @@ MYSQL;
     protected function createColumn($column)
     {
         $c = new ColumnSchema(['name' => $column['colname']]);
-        $c->rawName = $this->quoteColumnName($c->name);
+        $c->quotedName = $this->quoteColumnName($c->name);
         $c->allowNull = ($column['nulls'] == 'Y');
         $c->autoIncrement = ($column['identity'] == 'Y');
         $c->isPrimaryKey = array_get($column, 'is_primary_key', false);
@@ -480,27 +480,15 @@ MYSQL;
     }
 
     /**
-     * Returns all table names in the database.
-     *
-     * @param string $schema the schema of the tables. Defaults to empty string, meaning the current or default schema.
-     *                       If not empty, the returned table names will be prefixed with the schema name.
-     * @param bool   $include_views
-     *
-     * @return array all table names in the database.
+     * @inheritdoc
      */
-    protected function findTableNames($schema = '', $include_views = true)
+    protected function findTableNames($schema = '')
     {
-        if ($include_views) {
-            $condition = "('T','V')";
-        } else {
-            $condition = "('T')";
-        }
-
         if ($this->isISeries()) {
             $sql = <<<MYSQL
-SELECT TABLE_SCHEMA as TABSCHEMA, TABLE_NAME as TABNAME, TABLE_TYPE AS TYPE
+SELECT TABLE_SCHEMA as TABSCHEMA, TABLE_NAME as TABNAME
 FROM QSYS2.SYSTABLES
-WHERE TABLE_TYPE IN $condition AND SYSTEM_TABLE = 'N'
+WHERE TABLE_TYPE = 'T' AND SYSTEM_TABLE = 'N'
 MYSQL;
             if ($schema !== '') {
                 $sql .= <<<MYSQL
@@ -509,9 +497,9 @@ MYSQL;
             }
         } else {
             $sql = <<<MYSQL
-SELECT TABSCHEMA, TABNAME, TYPE
+SELECT TABSCHEMA, TABNAME
 FROM SYSCAT.TABLES
-WHERE TYPE IN $condition AND OWNERTYPE != 'S'
+WHERE TYPE = 'T' AND OWNERTYPE != 'S'
 MYSQL;
             if (!empty($schema)) {
                 $sql .= <<<MYSQL
@@ -526,7 +514,7 @@ MYSQL;
         $params = (!empty($schema)) ? [':schema' => $schema] : [];
         $rows = $this->connection->select($sql, $params);
 
-        $defaultSchema = $this->getDefaultSchema();
+        $defaultSchema = $this->getNamingSchema();
         $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
 
         $names = [];
@@ -534,15 +522,64 @@ MYSQL;
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $schemaName = trim(isset($row['TABSCHEMA']) ? $row['TABSCHEMA'] : '');
             $tableName = trim(isset($row['TABNAME']) ? $row['TABNAME'] : '');
-            $isView = (0 === strcasecmp('V', $row['TYPE']));
-            if ($addSchema) {
-                $name = $schemaName . '.' . $tableName;
-                $rawName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($tableName);;
-            } else {
-                $name = $tableName;
-                $rawName = $this->quoteTableName($tableName);
+            $internalName = $schemaName . '.' . $tableName;
+            $name = ($addSchema) ? $internalName : $tableName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($tableName);;
+            $settings = compact('schemaName', 'tableName', 'name', 'internalName','quotedName');
+            $names[strtolower($name)] = new TableSchema($settings);
+        }
+
+        return $names;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    protected function findViewNames($schema = '')
+    {
+        if ($this->isISeries()) {
+            $sql = <<<MYSQL
+SELECT TABLE_SCHEMA as TABSCHEMA, TABLE_NAME as TABNAME
+FROM QSYS2.SYSTABLES
+WHERE TABLE_TYPE = 'V' AND SYSTEM_TABLE = 'N'
+MYSQL;
+            if ($schema !== '') {
+                $sql .= <<<MYSQL
+  AND TABLE_SCHEMA = :schema
+MYSQL;
             }
-            $settings = compact('schemaName', 'tableName', 'name', 'rawName', 'isView');
+        } else {
+            $sql = <<<MYSQL
+SELECT TABSCHEMA, TABNAME
+FROM SYSCAT.TABLES
+WHERE TYPE = 'V' AND OWNERTYPE != 'S'
+MYSQL;
+            if (!empty($schema)) {
+                $sql .= <<<MYSQL
+  AND TABSCHEMA=:schema
+MYSQL;
+            }
+        }
+        $sql .= <<<MYSQL
+  ORDER BY TABNAME;
+MYSQL;
+
+        $params = (!empty($schema)) ? [':schema' => $schema] : [];
+        $rows = $this->connection->select($sql, $params);
+
+        $defaultSchema = $this->getNamingSchema();
+        $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
+
+        $names = [];
+        foreach ($rows as $row) {
+            $row = array_change_key_case((array)$row, CASE_UPPER);
+            $schemaName = trim(isset($row['TABSCHEMA']) ? $row['TABSCHEMA'] : '');
+            $tableName = trim(isset($row['TABNAME']) ? $row['TABNAME'] : '');
+            $internalName = $schemaName . '.' . $tableName;
+            $name = ($addSchema) ? $internalName : $tableName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($tableName);;
+            $settings = compact('schemaName', 'tableName', 'name', 'internalName','quotedName');
+            $settings['isView'] = true;
             $names[strtolower($name)] = new TableSchema($settings);
         }
 
@@ -565,13 +602,13 @@ MYSQL;
             $table->getColumn($table->primaryKey)->autoIncrement
         ) {
             if ($value === null) {
-                $value = $this->selectValue("SELECT MAX({$table->primaryKey}) FROM {$table->rawName}") + 1;
+                $value = $this->selectValue("SELECT MAX({$table->primaryKey}) FROM {$table->quotedName}") + 1;
             } else {
                 $value = (int)$value;
             }
 
             $this->connection
-                ->statement("ALTER TABLE {$table->rawName} ALTER COLUMN {$table->primaryKey} RESTART WITH $value");
+                ->statement("ALTER TABLE {$table->quotedName} ALTER COLUMN {$table->primaryKey} RESTART WITH $value");
         }
     }
 
@@ -580,8 +617,6 @@ MYSQL;
      *
      * @param boolean $check  whether to turn on or off the integrity check.
      * @param string  $schema the schema of the tables. Defaults to empty string, meaning the current or default schema.
-     *
-     * @since 1.1
      */
     public function checkIntegrity($check = true, $schema = '')
     {
@@ -615,7 +650,6 @@ MYSQL;
      * @param string $table the table to be truncated. The name will be properly quoted by the method.
      *
      * @return string the SQL statement for truncating a DB table.
-     * @since 1.1.6
      */
     public function truncateTable($table)
     {
@@ -700,7 +734,7 @@ MYSQL;
         }
         $rows = $this->connection->select($sql, $bindings);
 
-        $defaultSchema = $this->getDefaultSchema();
+        $defaultSchema = $this->getNamingSchema();
         $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
 
         $names = [];
@@ -708,13 +742,9 @@ MYSQL;
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $name = array_get($row, 'ROUTINENAME');
             $schemaName = $schema;
-            if ($addSchema) {
-                $publicName = $schemaName . '.' . $name;
-                $rawName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($name);;
-            } else {
-                $publicName = $name;
-                $rawName = $this->quoteTableName($name);
-            }
+            $internalName = $schemaName . '.' . $name;
+            $publicName = ($addSchema) ? $internalName : $name;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($name);
             if (!empty($returnType = array_get($row, 'RETURN_TYPENAME'))) {
                 $returnType = static::extractSimpleType($returnType);
             } else {
@@ -734,7 +764,7 @@ MYSQL;
                         break;
                 }
             }
-            $settings = compact('schemaName', 'name', 'publicName', 'rawName', 'returnType');
+            $settings = compact('schemaName', 'name', 'publicName', 'internalName', 'quotedName', 'returnType');
             $names[strtolower($publicName)] =
                 ('PROCEDURE' === $type) ? new ProcedureSchema($settings) : new FunctionSchema($settings);
         }
@@ -898,7 +928,7 @@ MYSQL;
                 $paramStr = $this->getRoutineParamString($param_schemas, $values);
 
                 /** @noinspection SqlDialectInspection */
-                return "SELECT * from TABLE({$routine->rawName}($paramStr))";
+                return "SELECT * from TABLE({$routine->quotedName}($paramStr))";
                 break;
             default:
                 return parent::getFunctionStatement($routine, $param_schemas, $values) . ' FROM SYSIBM.SYSDUMMY1';
