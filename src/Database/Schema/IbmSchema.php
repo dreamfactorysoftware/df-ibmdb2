@@ -22,13 +22,6 @@ class IbmSchema extends Schema
     const PROVIDES_FIELD_SCHEMA = true;
 
     /**
-     * @const string Quoting characters
-     */
-    const LEFT_QUOTE_CHARACTER = '"';
-
-    const RIGHT_QUOTE_CHARACTER = '"';
-
-    /**
      * @type boolean
      */
     private $isISeries = null;
@@ -309,7 +302,7 @@ class IbmSchema extends Schema
     protected function findColumns(TableSchema $table)
     {
         $schema = (!empty($table->schemaName)) ? $table->schemaName : $this->getDefaultSchema();
-        $params = [':table' => $table->tableName, ':schema' => $schema];
+        $params = [':table' => $table->resourceName, ':schema' => $schema];
 
         if ($this->isISeries()) {
             $sql = <<<MYSQL
@@ -521,11 +514,11 @@ MYSQL;
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $schemaName = trim(isset($row['TABSCHEMA']) ? $row['TABSCHEMA'] : '');
-            $tableName = trim(isset($row['TABNAME']) ? $row['TABNAME'] : '');
-            $internalName = $schemaName . '.' . $tableName;
-            $name = ($addSchema) ? $internalName : $tableName;
-            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($tableName);;
-            $settings = compact('schemaName', 'tableName', 'name', 'internalName','quotedName');
+            $resourceName = trim(isset($row['TABNAME']) ? $row['TABNAME'] : '');
+            $internalName = $schemaName . '.' . $resourceName;
+            $name = ($addSchema) ? $internalName : $resourceName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);;
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName','quotedName');
             $names[strtolower($name)] = new TableSchema($settings);
         }
 
@@ -574,11 +567,11 @@ MYSQL;
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $schemaName = trim(isset($row['TABSCHEMA']) ? $row['TABSCHEMA'] : '');
-            $tableName = trim(isset($row['TABNAME']) ? $row['TABNAME'] : '');
-            $internalName = $schemaName . '.' . $tableName;
-            $name = ($addSchema) ? $internalName : $tableName;
-            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($tableName);;
-            $settings = compact('schemaName', 'tableName', 'name', 'internalName','quotedName');
+            $resourceName = trim(isset($row['TABNAME']) ? $row['TABNAME'] : '');
+            $internalName = $schemaName . '.' . $resourceName;
+            $name = ($addSchema) ? $internalName : $resourceName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);;
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName','quotedName');
             $settings['isView'] = true;
             $names[strtolower($name)] = new TableSchema($settings);
         }
@@ -623,9 +616,8 @@ MYSQL;
         $enable = $check ? 'CHECKED' : 'UNCHECKED';
         $tableNames = $this->getTableNames($schema);
         $db = $this->connection;
-        foreach ($tableNames as $tableInfo) {
-            $tableName = $tableInfo['name'];
-            $db->statement("SET INTEGRITY FOR $tableName ALL IMMEDIATE $enable");
+        foreach ($tableNames as $table) {
+            $db->statement("SET INTEGRITY FOR {$table->quotedName} ALL IMMEDIATE $enable");
         }
     }
 
@@ -740,11 +732,11 @@ MYSQL;
         $names = [];
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
-            $name = array_get($row, 'ROUTINENAME');
+            $resourceName = array_get($row, 'ROUTINENAME');
             $schemaName = $schema;
-            $internalName = $schemaName . '.' . $name;
-            $publicName = ($addSchema) ? $internalName : $name;
-            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($name);
+            $internalName = $schemaName . '.' . $resourceName;
+            $name = ($addSchema) ? $internalName : $resourceName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
             if (!empty($returnType = array_get($row, 'RETURN_TYPENAME'))) {
                 $returnType = static::extractSimpleType($returnType);
             } else {
@@ -764,15 +756,15 @@ MYSQL;
                         break;
                 }
             }
-            $settings = compact('schemaName', 'name', 'publicName', 'internalName', 'quotedName', 'returnType');
-            $names[strtolower($publicName)] =
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName', 'returnType');
+            $names[strtolower($name)] =
                 ('PROCEDURE' === $type) ? new ProcedureSchema($settings) : new FunctionSchema($settings);
         }
 
         return $names;
     }
 
-    protected function loadParameters(&$holder)
+    protected function loadParameters(RoutineSchema &$holder)
     {
         if ($this->isISeries()) {
             $sql = <<<MYSQL
@@ -900,21 +892,14 @@ MYSQL;
     {
         switch ($field_info->type) {
             case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = (filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 1 : 0);
-                break;
-            case DbSimpleTypes::TYPE_INTEGER:
-                $value = intval($value);
+                $value = ($value ? 1 : 0);
                 break;
             case DbSimpleTypes::TYPE_DECIMAL:
                 $value = number_format(floatval($value), $field_info->scale, '.', '');
                 break;
-            case DbSimpleTypes::TYPE_DOUBLE:
-            case DbSimpleTypes::TYPE_FLOAT:
-                $value = floatval($value);
-                break;
         }
 
-        return $value;
+        return parent::parseValueForSet($value, $field_info);
     }
 
     /**
