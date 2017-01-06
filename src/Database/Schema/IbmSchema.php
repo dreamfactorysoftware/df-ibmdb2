@@ -764,7 +764,7 @@ MYSQL;
         return $names;
     }
 
-    protected function loadParameters(RoutineSchema &$holder)
+    protected function loadParameters(RoutineSchema $holder)
     {
         if ($this->isISeries()) {
             $sql = <<<MYSQL
