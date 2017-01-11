@@ -672,8 +672,7 @@ MYSQL;
         $definition = preg_replace("/ +(not)? *null/i", "", $definition);
 
         $sql = <<<MYSQL
-ALTER TABLE {$this->quoteTableName($table)} 
-ALTER COLUMN {$this->quoteColumnName($column)} SET DATA TYPE {$this->getColumnType($definition)}
+ALTER TABLE $table ALTER COLUMN {$this->quoteColumnName($column)} SET DATA TYPE {$this->getColumnType($definition)}
 MYSQL;
 
         if ($columnSchema->allowNull != $allowNullNewType) {
