@@ -24,14 +24,13 @@ class IbmSchema extends Schema
     /**
      * @type boolean
      */
-    private $isISeries = null;
+    protected $isISeries = null;
 
-    private function isISeries()
+    protected function isISeries()
     {
         if ($this->isISeries === null) {
             try {
-                /** @noinspection SqlDialectInspection */
-                $sql = 'SELECT TABLE_NAME FROM QSYS2.SYSTABLES LIMIT 1';
+                $sql = 'SELECT TABLE_NAME FROM QSYS2.SYSTABLES  FETCH FIRST 1 ROWS ONLY';
                 $stmt = $this->connection->select($sql);
                 $this->isISeries = (bool)$stmt;
 
@@ -431,8 +430,7 @@ INNER JOIN qsys2.syskeycst parent
    AND crossref.unique_constraint_name = parent.constraint_name
 INNER JOIN qsys2.syscst coninfo
     ON child.constraint_name = coninfo.constraint_name
-WHERE child.table_name = :table AND child.table_schema = :schema
-  AND coninfo.constraint_type = 'FOREIGN KEY'
+WHERE coninfo.constraint_type = 'FOREIGN KEY'
 MYSQL;
         } else {
             $sql = <<<MYSQL
@@ -518,7 +516,7 @@ MYSQL;
             $internalName = $schemaName . '.' . $resourceName;
             $name = ($addSchema) ? $internalName : $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);;
-            $settings = compact('schemaName', 'resourceName', 'name', 'internalName','quotedName');
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
             $names[strtolower($name)] = new TableSchema($settings);
         }
 
@@ -571,7 +569,7 @@ MYSQL;
             $internalName = $schemaName . '.' . $resourceName;
             $name = ($addSchema) ? $internalName : $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);;
-            $settings = compact('schemaName', 'resourceName', 'name', 'internalName','quotedName');
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
             $settings['isView'] = true;
             $names[strtolower($name)] = new TableSchema($settings);
         }
@@ -736,24 +734,26 @@ MYSQL;
             $internalName = $schemaName . '.' . $resourceName;
             $name = ($addSchema) ? $internalName : $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
-            if (!empty($returnType = array_get($row, 'RETURN_TYPENAME'))) {
-                $returnType = static::extractSimpleType($returnType);
-            } else {
-                switch ($functionType = array_get($row, 'FUNCTIONTYPE')) {
-                    case 'R': // row
-                        $returnType = 'row';
-                        break;
-                    case 'T': // table
-                        $returnType = 'table';
-                        break;
-                    case 'C': // column or aggregate
-                        $returnType = 'column';
-                        break;
-                    case 'S': // scalar, return type should be set
-                        break;
-                    default: // procedure
-                        break;
-                }
+            switch ($functionType = array_get($row, 'FUNCTIONTYPE')) {
+                case 'R': // row
+                    $returnType = DbSimpleTypes::TYPE_ROW;
+                    break;
+                case 'T': // table
+                    $returnType = DbSimpleTypes::TYPE_TABLE;
+                    break;
+                case 'C': // column or aggregate
+                    $returnType = DbSimpleTypes::TYPE_COLUMN;
+                    break;
+                case 'S': // scalar, return type should be set
+                    if (!empty($returnType = array_get($row, 'RETURN_TYPENAME'))) {
+                        $returnType = static::extractSimpleType($returnType);
+                    }
+                    break;
+                default: // procedure
+                    if (!empty($returnType = array_get($row, 'RETURN_TYPENAME'))) {
+                        $returnType = static::extractSimpleType($returnType);
+                    }
+                    break;
             }
             $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName', 'returnType');
             $names[strtolower($name)] =
@@ -793,7 +793,8 @@ MYSQL;
                                 'param_type'    => $paramType,
                                 'type'          => $simpleType,
                                 'db_type'       => $dbType,
-                                'length'        => $length,
+//                                'length'        => $length, possible PDO bug here
+                                'length'        => ($dbType == "CHARACTER") ? $length + 1 : $length,
                                 'precision'     => $precision,
                                 'scale'         => $scale,
                                 'default_value' => array_get($row, 'DEFAULT'),
@@ -907,11 +908,10 @@ MYSQL;
     protected function getFunctionStatement(RoutineSchema $routine, array $param_schemas, array &$values)
     {
         switch ($routine->returnType) {
-            case 'row':
-            case 'table':
+            case DbSimpleTypes::TYPE_ROW:
+            case DbSimpleTypes::TYPE_TABLE:
                 $paramStr = $this->getRoutineParamString($param_schemas, $values);
 
-                /** @noinspection SqlDialectInspection */
                 return "SELECT * from TABLE({$routine->quotedName}($paramStr))";
                 break;
             default:
@@ -922,7 +922,6 @@ MYSQL;
 
     protected function doRoutineBinding($statement, array $paramSchemas, array &$values)
     {
-//        if ($this->isISeries()) {
         foreach ($paramSchemas as $key => $paramSchema) {
             $pdoType = $this->getPdoType($paramSchema->type);
             switch ($paramSchema->paramType) {

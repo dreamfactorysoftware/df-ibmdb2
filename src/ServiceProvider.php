@@ -19,7 +19,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
 
     public function register()
     {
-        // Add our database drivers.
+        // Add our database drivers
         $this->app->resolving('db', function (DatabaseManager $db) {
             $db->extend('ibm', function ($config) {
                 $connector = new IbmConnector();
@@ -29,7 +29,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
             });
         });
 
-        // Add our service types.
+        // Add our service types
         $this->app->resolving('df.service', function (ServiceManager $df) {
             $df->addType(
                 new ServiceType([
@@ -48,7 +48,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
             );
         });
 
-        // Add our database extensions.
+        // Add our database extensions
         $this->app->resolving('db.schema', function (DbSchemaExtensions $db) {
             $db->extend('ibm', function ($connection) {
                 return new IbmSchema($connection);
