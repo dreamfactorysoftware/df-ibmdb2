@@ -888,18 +888,16 @@ MYSQL;
         return $this->connection->raw('(CURRENT TIMESTAMP)');
     }
 
-    public function parseValueForSet($value, $field_info)
+    public function typecastToNative($value, $field_info, $allow_null = true)
     {
+        $value = parent::typecastToNative($value, $field_info, $allow_null);
+
         switch ($field_info->type) {
-            case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = ($value ? 1 : 0);
-                break;
             case DbSimpleTypes::TYPE_DECIMAL:
-                $value = number_format(floatval($value), $field_info->scale, '.', '');
-                break;
+                return number_format($value, $field_info->scale, '.', '');
         }
 
-        return parent::parseValueForSet($value, $field_info);
+        return $value;
     }
 
     /**
@@ -923,7 +921,7 @@ MYSQL;
     protected function doRoutineBinding($statement, array $paramSchemas, array &$values)
     {
         foreach ($paramSchemas as $key => $paramSchema) {
-            $pdoType = $this->getPdoType($paramSchema->type);
+            $pdoType = $this->extractPdoType($paramSchema->type);
             switch ($paramSchema->paramType) {
                 case 'IN':
                     $this->bindValue($statement, ':' . $paramSchema->name, array_get($values, $key));
