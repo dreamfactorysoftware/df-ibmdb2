@@ -6,21 +6,15 @@ use DreamFactory\Core\Database\Schema\FunctionSchema;
 use DreamFactory\Core\Database\Schema\ParameterSchema;
 use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Database\Schema\RoutineSchema;
-use DreamFactory\Core\Database\Components\Schema;
 use DreamFactory\Core\Database\Schema\TableSchema;
-use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Enums\DbSimpleTypes;
+use DreamFactory\Core\SqlDb\Database\Schema\SqlSchema;
 
 /**
  * Schema is the class for retrieving metadata information from a IBM DB2 database.
  */
-class IbmSchema extends Schema
+class IbmSchema extends SqlSchema
 {
-    /**
-     * Underlying database provides field-level schema, i.e. SQL (true) vs NoSQL (false)
-     */
-    const PROVIDES_FIELD_SCHEMA = true;
-
     /**
      * @type boolean
      */
@@ -46,16 +40,6 @@ class IbmSchema extends Schema
     /**
      * @inheritdoc
      */
-    public function getSupportedResourceTypes()
-    {
-        return [
-            DbResourceTypes::TYPE_TABLE,
-            DbResourceTypes::TYPE_VIEW,
-            DbResourceTypes::TYPE_PROCEDURE,
-            DbResourceTypes::TYPE_FUNCTION
-        ];
-    }
-
     protected static function isUndiscoverableType($type)
     {
         switch ($type) {
@@ -66,6 +50,9 @@ class IbmSchema extends Schema
         return parent::isUndiscoverableType($type);
     }
 
+    /**
+     * @inheritdoc
+     */
     protected function translateSimpleColumnTypes(array &$info)
     {
         // override this in each schema class
@@ -165,6 +152,9 @@ class IbmSchema extends Schema
         }
     }
 
+    /**
+     * @inheritdoc
+     */
     protected function validateColumnSettings(array &$info)
     {
         // override this in each schema class
@@ -631,7 +621,7 @@ MYSQL;
                 break;
         }
 
-        return parent::addForeignKey($name, $table, $columns, $refTable, $refColumns, $delete, null);
+        return parent::addForeignKey($name, $table, $columns, $refTable, $refColumns, $delete, $update);
     }
 
     /**
