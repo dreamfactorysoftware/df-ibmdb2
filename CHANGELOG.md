@@ -4,6 +4,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2017-07-27
+### Changed
+- Separating base schema from SQL schema
+- Datetime settings handling
+
 ## [0.10.0] - 2017-06-05
 ### Changed
 - Cleanup - removal of php-utils dependency
@@ -50,7 +55,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.3.0 - 2016-05-27
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.10.0...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.11.0...HEAD
+[0.11.0]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.10.0...0.11.0
 [0.10.0]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/dreamfactorysoftware/df-ibmdb2/compare/0.7.0...0.8.0
