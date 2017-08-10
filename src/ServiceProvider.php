@@ -1,7 +1,6 @@
 <?php
 namespace DreamFactory\Core\IbmDb2;
 
-use DreamFactory\Core\Components\ServiceDocBuilder;
 use DreamFactory\Core\Components\DbSchemaExtensions;
 use DreamFactory\Core\Enums\ServiceTypeGroups;
 use DreamFactory\Core\IbmDb2\Database\Connectors\IbmConnector;
@@ -15,8 +14,6 @@ use Illuminate\Database\DatabaseManager;
 
 class ServiceProvider extends \Illuminate\Support\ServiceProvider
 {
-    use ServiceDocBuilder;
-
     public function register()
     {
         // Add our database drivers
@@ -38,9 +35,6 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
                     'description'     => 'Database service supporting IBM DB2 SQL connections.',
                     'group'           => ServiceTypeGroups::DATABASE,
                     'config_handler'  => IbmDbConfig::class,
-                    'default_api_doc' => function ($service) {
-                        return $this->buildServiceDoc($service->id, IbmDb2::getApiDocInfo($service));
-                    },
                     'factory'         => function ($config) {
                         return new IbmDb2($config);
                     },
