@@ -41,7 +41,7 @@ class IbmSchema extends SqlSchema
     /**
      * @inheritdoc
      */
-    protected static function isUndiscoverableType($type)
+    public static function isUndiscoverableType($type)
     {
         switch ($type) {
             case DbSimpleTypes::TYPE_BOOLEAN:
