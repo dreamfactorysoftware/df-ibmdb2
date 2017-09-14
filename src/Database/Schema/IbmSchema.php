@@ -749,7 +749,7 @@ MYSQL;
             $sql = <<<MYSQL
 SELECT ORDINAL_POSITION, PARAMETER_MODE, ROW_TYPE, PARAMETER_NAME, DATA_TYPE, NUMERIC_PRECISION, NUMERIC_SCALE, CHARACTER_MAXIMUM_LENGTH, DEFAULT
 FROM QSYS2.SYSPARMS
-WHERE SPECIFIC_NAME = '{$holder->name}' AND SPECIFIC_SCHEMA = '{$holder->schemaName}'
+WHERE SPECIFIC_NAME = '{$holder->resourceName}' AND SPECIFIC_SCHEMA = '{$holder->schemaName}'
 MYSQL;
 
             $rows = $this->connection->select($sql);
@@ -801,7 +801,7 @@ MYSQL;
             $sql = <<<MYSQL
 SELECT ORDINAL, ROWTYPE, PARMNAME, TYPENAME, LENGTH, SCALE, DEFAULT
 FROM SYSCAT.ROUTINEPARMS
-WHERE ROUTINENAME = '{$holder->name}' AND ROUTINESCHEMA = '{$holder->schemaName}'
+WHERE ROUTINENAME = '{$holder->resourceName}' AND ROUTINESCHEMA = '{$holder->schemaName}'
 MYSQL;
         }
 
