@@ -1,7 +1,9 @@
 <?php
+
 namespace DreamFactory\Core\IbmDb2;
 
 use DreamFactory\Core\Components\DbSchemaExtensions;
+use DreamFactory\Core\Enums\LicenseLevel;
 use DreamFactory\Core\Enums\ServiceTypeGroups;
 use DreamFactory\Core\IbmDb2\Database\Connectors\IbmConnector;
 use DreamFactory\Core\IbmDb2\Database\IbmConnection;
@@ -30,12 +32,13 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         $this->app->resolving('df.service', function (ServiceManager $df) {
             $df->addType(
                 new ServiceType([
-                    'name'            => 'ibmdb2',
-                    'label'           => 'IBM DB2',
-                    'description'     => 'Database service supporting IBM DB2 SQL connections.',
-                    'group'           => ServiceTypeGroups::DATABASE,
-                    'config_handler'  => IbmDbConfig::class,
-                    'factory'         => function ($config) {
+                    'name'                  => 'ibmdb2',
+                    'label'                 => 'IBM DB2',
+                    'description'           => 'Database service supporting IBM DB2 SQL connections.',
+                    'group'                 => ServiceTypeGroups::DATABASE,
+                    'subscription_required' => LicenseLevel::SILVER,
+                    'config_handler'        => IbmDbConfig::class,
+                    'factory'               => function ($config) {
                         return new IbmDb2($config);
                     },
                 ])
