@@ -394,7 +394,7 @@ MYSQL;
     /**
      * @return string default schema.
      */
-    public function findDefaultSchema()
+    public function getDefaultSchema()
     {
         $sql = <<<MYSQL
 SELECT CURRENT SCHEMA FROM SYSIBM.SYSDUMMY1
@@ -403,7 +403,7 @@ MYSQL;
         return $this->selectValue($sql);
     }
 
-    protected function findSchemaNames()
+    public function getSchemas()
     {
         switch ($this->getDB2Series()) {
             case static::DB2_ISERIES:
@@ -437,7 +437,7 @@ MYSQL;
         return $rows;
     }
 
-    protected function findTableNames($schema = '')
+    protected function getTableNames($schema = '')
     {
         switch ($this->getDB2Series()) {
             case static::DB2_ISERIES:
@@ -503,7 +503,7 @@ MYSQL;
         return $names;
     }
 
-    protected function findViewNames($schema = '')
+    protected function getViewNames($schema = '')
     {
         switch ($this->getDB2Series()) {
             case static::DB2_ISERIES:
@@ -572,11 +572,12 @@ MYSQL;
         return $names;
     }
 
-    protected function findColumns(TableSchema $table)
+    protected function loadTableColumns(TableSchema $table)
     {
         $params = [':table' => $table->resourceName, ':schema' => $table->schemaName];
 
-        switch ($this->getDB2Series()) {
+        $series = $this->getDB2Series();
+        switch ($series) {
             case static::DB2_ISERIES:
                 $sql = <<<MYSQL
 SELECT column_name AS colname,
@@ -644,85 +645,144 @@ MYSQL;
 //                break;
         }
 
-        if (!empty($columns = $this->connection->select($sql, $params))) {
-            switch ($this->getDB2Series()) {
-                case static::DB2_ISERIES:
-                    $sql = <<<MYSQL
-SELECT column_name AS colnames
-FROM qsys2.syscst 
-INNER JOIN qsys2.syskeycst
-  ON qsys2.syscst.constraint_name = qsys2.syskeycst.constraint_name
- AND qsys2.syscst.table_schema = qsys2.syskeycst.table_schema 
- AND qsys2.syscst.table_name = qsys2.syskeycst.table_name
-WHERE qsys2.syscst.constraint_type = 'PRIMARY KEY'
-  AND qsys2.syscst.table_name = :table AND qsys2.syscst.table_schema = :schema
-MYSQL;
-
-                    $indexes = $this->connection->select($sql, $params);
-                    foreach ($indexes as $index) {
-                        $index = array_change_key_case((array)$index, CASE_LOWER);
-                        $names = explode("+", ltrim($index['colnames'], '+'));
-                        foreach ($names as $name) {
-                            foreach ($columns as &$column) {
-                                $column = array_change_key_case((array)$column, CASE_LOWER);
-                                if ($name === array_get($column, 'colname')) {
-                                    $column['is_primary_key'] = true;
+        $columns = $this->connection->select($sql, $params);
+            foreach ($columns as $column) {
+                $column = array_change_key_case((array)$column, CASE_LOWER);
+                $c = new ColumnSchema(['name' => $column['colname']]);
+                $c->quotedName = $this->quoteColumnName($c->name);
+                switch ($series) {
+                    case static::DB2_ZOS:
+                        // handle default, defaultValue, and keyseq
+                        $default = array_get($column, 'default');
+                        unset($column['default']);
+                        switch ($default) {
+                            case 'A':
+                            case 'D':
+                            case 'E':
+                            case 'F':
+                            case 'I':
+                            case 'J':
+                                $column['identity'] = true;
+                                break;
+                            default:
+                                $default = (int)$default;
+                                if ($default > 1 && $default < 10) {
+                                    $column['default'] = $column['defaultvalue'];
+                                } else {
+                                    $column['default'] = null;
                                 }
-                            }
+                                break;
+                        }
+                        if (0 < (int)array_get($column, 'keyseq')) {
+                            $column['is_primary_key'] = true;
+                        }
+                        break;
+                }
+
+                $c->allowNull = array_get_bool($column, 'nulls');
+                $c->autoIncrement = array_get_bool($column, 'identity');
+                $c->isPrimaryKey = array_get_bool($column, 'is_primary_key');
+                $c->dbType = $column['typename'];
+
+                if (preg_match('/(varchar|character|clob|graphic|binary|blob)/i', $c->dbType)) {
+                    $c->size = $c->precision = $column['length'];
+                } elseif (preg_match('/(decimal|double|real)/i', $c->dbType)) {
+                    $c->size = $c->precision = $column['length'];
+                    $c->scale = $column['scale'];
+                }
+
+                $c->fixedLength = $this->extractFixedLength($c->dbType);
+                $c->supportsMultibyte = $this->extractMultiByteSupport($c->dbType);
+                $this->extractType($c, $c->dbType);
+                if (is_string($column['default'])) {
+                    $column['default'] = trim($column['default'], '\'');
+                }
+                $default = ($column['default'] == "NULL") ? null : $column['default'];
+
+                $this->extractDefault($c, $default);
+
+                if ($c->isPrimaryKey) {
+                    if ($c->autoIncrement) {
+                        $table->sequenceName = array_get($column, 'sequence', $c->name);
+                        if ((DbSimpleTypes::TYPE_INTEGER === $c->type)) {
+                            $c->type = DbSimpleTypes::TYPE_ID;
                         }
                     }
-                    break;
-                case static::DB2_LUW:
-                    $sql = <<<MYSQL
-SELECT colnames AS colnames
-FROM syscat.indexes
-WHERE uniquerule = 'P' AND tabname = :table AND tabschema = :schema
-MYSQL;
+                    $table->addPrimaryKey($c->name);
+                }
+                $table->addColumn($c);
+            }
+    }
 
-                    $indexes = $this->connection->select($sql, $params);
-                    foreach ($indexes as $index) {
-                        $index = array_change_key_case((array)$index, CASE_LOWER);
-                        $names = explode("+", ltrim($index['colnames'], '+'));
-                        foreach ($names as $name) {
-                            foreach ($columns as &$column) {
-                                $column = array_change_key_case((array)$column, CASE_LOWER);
-                                if ($name === array_get($column, 'colname')) {
-                                    $column['is_primary_key'] = true;
-                                }
-                            }
-                        }
+    protected function getTableConstraints($schema = '')
+    {
+        if (is_array($schema)) {
+            $schema = implode("','", $schema);
+        }
+
+        $constraints = [];
+        switch ($this->getDB2Series()) {
+            case static::DB2_ISERIES:
+                $sql = <<<MYSQL
+SELECT tc.constraint_name, tc.constraint_type, 
+kcu.table_schema AS table_schema, kcu.table_name AS table_name, kcu.column_name AS column_name,
+kcu2.table_schema AS referenced_table_schema, kcu2.table_name AS referenced_table_name, kcu2.column_name AS referenced_column_name,
+rc.update_rule, rc.delete_rule
+FROM qsys2.syscst tc
+INNER JOIN qsys2.syskeycst kcu ON kcu.constraint_name = tc.constraint_name
+INNER JOIN qsys2.sysrefcst rc ON tc.constraint_schema = rc.constraint_schema AND tc.constraint_name = rc.constraint_name
+INNER JOIN qsys2.syskeycst kcu2 ON rc.unique_constraint_schema = kcu2.constraint_schema AND rc.unique_constraint_name = kcu2.constraint_name
+WHERE tc.table_schema IN ('{$schema}');
+MYSQL;
+                break;
+            case static::DB2_LUW:
+                $sql = <<<SQL
+SELECT tc.constname as constraint_name, tc.type as constraint_type, 
+kcu.tabschema as table_schema, kcu.tabname as table_name, kcu.colname as column_name,
+kcu2.tabschema as referenced_table_schema, kcu2.tabname as referenced_table_name, kcu2.colname as referenced_column_name, 
+rc.updaterule as update_rule, rc.deleterule as delete_rule
+FROM SYSCAT.TABCONST tc
+LEFT JOIN SYSCAT.KEYCOLUSE kcu ON tc.constname = kcu.constname AND tc.tabname = kcu.tabname
+LEFT JOIN SYSCAT.REFERENCES rc ON tc.constname = rc.constname
+LEFT JOIN SYSCAT.KEYCOLUSE kcu2 ON rc.reftabschema = kcu2.tabschema AND rc.reftabname = kcu2.tabname AND rc.refkeyname = kcu2.constname AND kcu.colseq = kcu2.colseq
+WHERE tc.tabschema IN ('{$schema}');
+SQL;
+                break;
+            case static::DB2_ZOS:
+                // prior to 12.0, PK and Unique constraints separate from FK
+                $sql = <<<MYSQL
+SELECT tc.CONSTNAME AS constraint_name, tc.TYPE as constraint_type, 
+tc.TBCREATOR AS table_schema, tc.TBNAME as table_name, kcu.COLNAME AS column_name
+FROM SYSIBM.SYSTABCONST tc
+LEFT JOIN SYSIBM.SYSKEYCOLUSE kcu ON tc.constname = kcu.constname AND tc.tbname = kcu.tbname
+WHERE tc.TBCREATOR IN ('{$schema}');
+MYSQL;
+                $results = $this->connection->select($sql);
+                foreach ($results as $row) {
+                    $row = array_change_key_case((array)$row, CASE_LOWER);
+                    $ts = strtolower($row['table_schema']);
+                    $tn = strtolower($row['table_name']);
+                    $cn = strtolower($row['constraint_name']);
+                    $colName = array_get($row, 'column_name');
+                    if (isset($constraints[$ts][$tn][$cn])) {
+                        $constraints[$ts][$tn][$cn]['column_name'] =
+                            array_merge((array)$constraints[$ts][$tn][$cn]['column_name'], (array)$colName);
+                    } else {
+                        $constraints[$ts][$tn][$cn] = $row;
                     }
-                    break;
-                case static::DB2_ZOS:
-                        foreach ($columns as &$column) {
-                            $column = array_change_key_case((array)$column, CASE_LOWER);
-                            // handle default, defaultValue, and keyseq
-                            $default = array_get($column, 'default');
-                            unset($column['default']);
-                            switch ($default) {
-                                case 'A':
-                                case 'D':
-                                case 'E':
-                                case 'F':
-                                case 'I':
-                                case 'J':
-                                    $column['identity'] = true;
-                                    break;
-                                default:
-                                    $default = (int)$default;
-                                    if ($default > 1 && $default < 10) {
-                                        $column['default'] = $column['defaultvalue'];
-                                    } else {
-                                        $column['default'] = null;
-                                    }
-                                    break;
-                            }
-                            if (0 < (int)array_get($column, 'keyseq')) {
-                                $column['is_primary_key'] = true;
-                            }
-                        }
-                    break;
-//                case static::DB2_ODBC:
+                }
+
+                $sql = <<<MYSQL
+SELECT rel.RELNAME AS constraint_name, 'F' as constraint_type, 
+rel.CREATOR AS table_schema, rel.TBNAME as table_name, fk.COLNAME AS column_name,
+rel.REFTBCREATOR AS referenced_table_schema, rel.REFTBNAME as referenced_table_name, fk.COLNAME AS referenced_column_name,
+rel.DELETERULE as delete_rule
+FROM SYSIBM.SYSRELS rel
+INNER JOIN SYSIBM.SYSFOREIGNKEYS fk ON fk.RELNAME = rel.RELNAME
+WHERE tc.TBCREATOR IN ('{$schema}');
+MYSQL;
+                break;
+//            case static::DB2_ODBC:
 //                    $sql = <<<MYSQL
 //SELECT column_name
 //FROM SYSIBM.SQLPRIMARYKEYS
@@ -740,82 +800,6 @@ MYSQL;
 //                            }
 //                        }
 //                    }
-//                    break;
-            }
-        }
-
-        return $columns;
-    }
-
-    protected function createColumn($column)
-    {
-        $c = new ColumnSchema(['name' => $column['colname']]);
-        $c->quotedName = $this->quoteColumnName($c->name);
-        $c->allowNull = array_get_bool($column, 'nulls');
-        $c->autoIncrement = array_get_bool($column, 'identity');
-        $c->isPrimaryKey = array_get_bool($column, 'is_primary_key');
-        $c->dbType = $column['typename'];
-
-        if (preg_match('/(varchar|character|clob|graphic|binary|blob)/i', $c->dbType)) {
-            $c->size = $c->precision = $column['length'];
-        } elseif (preg_match('/(decimal|double|real)/i', $c->dbType)) {
-            $c->size = $c->precision = $column['length'];
-            $c->scale = $column['scale'];
-        }
-
-        $c->fixedLength = $this->extractFixedLength($c->dbType);
-        $c->supportsMultibyte = $this->extractMultiByteSupport($c->dbType);
-        $this->extractType($c, $c->dbType);
-        if (is_string($column['default'])) {
-            $column['default'] = trim($column['default'], '\'');
-        }
-        $default = ($column['default'] == "NULL") ? null : $column['default'];
-
-        $this->extractDefault($c, $default);
-
-        return $c;
-    }
-
-    protected function findTableReferences()
-    {
-        switch ($this->getDB2Series()) {
-            case static::DB2_ISERIES:
-                $sql = <<<MYSQL
-SELECT
-  child.table_schema AS table_schema, child.table_name AS table_name, child.column_name AS column_name
-  parent.table_schema AS referenced_table_schema, parent.table_name AS referenced_table_name, parent.column_name AS referenced_column_name,
-FROM qsys2.syskeycst child
-INNER JOIN qsys2.sysrefcst crossref
-    ON child.constraint_schema = crossref.constraint_schema
-   AND child.constraint_name = crossref.constraint_name
-INNER JOIN qsys2.syskeycst parent
-    ON crossref.unique_constraint_schema = parent.constraint_schema
-   AND crossref.unique_constraint_name = parent.constraint_name
-INNER JOIN qsys2.syscst coninfo
-    ON child.constraint_name = coninfo.constraint_name
-WHERE coninfo.constraint_type = 'FOREIGN KEY'
-MYSQL;
-                break;
-            case static::DB2_LUW:
-                $sql = <<<MYSQL
-SELECT 
-  fk.tabschema AS table_schema, fk.tabname AS table_name, fk.colname AS column_name,
-  pk.tabschema AS referenced_table_schema, pk.tabname AS referenced_table_name, pk.colname AS referenced_column_name
-FROM syscat.references ref
-INNER JOIN syscat.keycoluse AS fk ON fk.constname = ref.constname
-INNER JOIN syscat.keycoluse AS pk ON pk.constname = ref.refkeyname AND pk.colseq = fk.colseq
-MYSQL;
-                break;
-            case static::DB2_ZOS:
-                $sql = <<<MYSQL
-SELECT
-  rel.CREATOR AS table_schema, rel.TBNAME as table_name, fk.COLNAME AS column_name,
-  rel.REFTBCREATOR AS referenced_table_schema, rel.REFTBNAME as referenced_table_name, fk.COLNAME AS referenced_column_name
-FROM SYSIBM.SYSRELS rel
-INNER JOIN SYSIBM.SYSFOREIGNKEYS fk ON fk.RELNAME = rel.RELNAME
-MYSQL;
-                break;
-//            case static::DB2_ODBC:
 //                $sql = <<<MYSQL
 //SELECT
 //  FKTABLE_SCHEM AS table_schema, FKTABLE_NAME as table_name, FKCOLUMN_NAME AS column_name,
@@ -825,10 +809,31 @@ MYSQL;
 //                break;
         }
 
-        return $this->connection->select($sql);
+        $results = $this->connection->select($sql);
+        foreach ($results as $row) {
+            $row = array_change_key_case((array)$row, CASE_LOWER);
+            $ts = strtolower($row['table_schema']);
+            $tn = strtolower($row['table_name']);
+            $cn = strtolower($row['constraint_name']);
+            $colName = array_get($row, 'column_name');
+            $refColName = array_get($row, 'referenced_column_name');
+            if (isset($constraints[$ts][$tn][$cn])) {
+                $constraints[$ts][$tn][$cn]['column_name'] =
+                    array_merge((array)$constraints[$ts][$tn][$cn]['column_name'], (array)$colName);
+
+                if (isset($refColName)) {
+                    $constraints[$ts][$tn][$cn]['referenced_column_name'] =
+                        array_merge((array)$constraints[$ts][$tn][$cn]['referenced_column_name'], (array)$refColName);
+                }
+            } else {
+                $constraints[$ts][$tn][$cn] = $row;
+            }
+        }
+
+        return $constraints;
     }
 
-    protected function findRoutineNames($type, $schema = '')
+    protected function getRoutineNames($type, $schema = '')
     {
         switch ($this->getDB2Series()) {
             case static::DB2_ISERIES:
