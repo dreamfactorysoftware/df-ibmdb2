@@ -11,6 +11,7 @@ use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Enums\DbSimpleTypes;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\SqlDb\Database\Schema\SqlSchema;
+use Illuminate\Support\Arr;
 
 /**
  * Schema is the class for retrieving metadata information from a IBM DB2 database.
@@ -653,7 +654,7 @@ MYSQL;
                 switch ($series) {
                     case static::DB2_ZOS:
                         // handle default, defaultValue, and keyseq
-                        $default = array_get($column, 'default');
+                        $default = Arr::get($column, 'default');
                         unset($column['default']);
                         switch ($default) {
                             case 'A':
@@ -673,7 +674,7 @@ MYSQL;
                                 }
                                 break;
                         }
-                        if (0 < (int)array_get($column, 'keyseq')) {
+                        if (0 < (int)Arr::get($column, 'keyseq')) {
                             $column['is_primary_key'] = true;
                         }
                         break;
@@ -703,7 +704,7 @@ MYSQL;
 
                 if ($c->isPrimaryKey) {
                     if ($c->autoIncrement) {
-                        $table->sequenceName = array_get($column, 'sequence', $c->name);
+                        $table->sequenceName = Arr::get($column, 'sequence', $c->name);
                         if ((DbSimpleTypes::TYPE_INTEGER === $c->type)) {
                             $c->type = DbSimpleTypes::TYPE_ID;
                         }
@@ -763,7 +764,7 @@ MYSQL;
                     $ts = strtolower($row['table_schema']);
                     $tn = strtolower($row['table_name']);
                     $cn = strtolower($row['constraint_name']);
-                    $colName = array_get($row, 'column_name');
+                    $colName = Arr::get($row, 'column_name');
                     if (isset($constraints[$ts][$tn][$cn])) {
                         $constraints[$ts][$tn][$cn]['column_name'] =
                             array_merge((array)$constraints[$ts][$tn][$cn]['column_name'], (array)$colName);
@@ -815,8 +816,8 @@ MYSQL;
             $ts = strtolower($row['table_schema']);
             $tn = strtolower($row['table_name']);
             $cn = strtolower($row['constraint_name']);
-            $colName = array_get($row, 'column_name');
-            $refColName = array_get($row, 'referenced_column_name');
+            $colName = Arr::get($row, 'column_name');
+            $refColName = Arr::get($row, 'referenced_column_name');
             if (isset($constraints[$ts][$tn][$cn])) {
                 $constraints[$ts][$tn][$cn]['column_name'] =
                     array_merge((array)$constraints[$ts][$tn][$cn]['column_name'], (array)$colName);
@@ -878,12 +879,12 @@ MYSQL;
         $names = [];
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
-            $resourceName = array_get($row, 'ROUTINENAME');
+            $resourceName = Arr::get($row, 'ROUTINENAME');
             $schemaName = $schema;
             $internalName = $schemaName . '.' . $resourceName;
             $name = $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
-            switch ($functionType = array_get($row, 'FUNCTIONTYPE')) {
+            switch ($functionType = Arr::get($row, 'FUNCTIONTYPE')) {
                 case 'R': // row
                     $returnType = DbSimpleTypes::TYPE_ROW;
                     break;
@@ -894,12 +895,12 @@ MYSQL;
                     $returnType = DbSimpleTypes::TYPE_COLUMN;
                     break;
                 case 'S': // scalar, return type should be set
-                    if (!empty($returnType = array_get($row, 'RETURN_TYPENAME'))) {
+                    if (!empty($returnType = Arr::get($row, 'RETURN_TYPENAME'))) {
                         $returnType = static::extractSimpleType($returnType);
                     }
                     break;
                 default: // procedure
-                    if (!empty($returnType = array_get($row, 'RETURN_TYPENAME'))) {
+                    if (!empty($returnType = Arr::get($row, 'RETURN_TYPENAME'))) {
                         $returnType = static::extractSimpleType($returnType);
                     }
                     break;
@@ -925,18 +926,16 @@ MYSQL;
                 $rows = $this->connection->select($sql);
                 foreach ($rows as $row) {
                     $row = array_change_key_case((array)$row, CASE_UPPER);
-                    $paramName = array_get($row, 'PARAMETER_NAME');
-                    $dbType = array_get($row, 'DATA_TYPE');
+                    $paramName = Arr::get($row, 'PARAMETER_NAME');
+                    $dbType = Arr::get($row, 'DATA_TYPE');
                     $simpleType = static::extractSimpleType($dbType);
-                    $pos = intval(array_get($row, 'ORDINAL_POSITION'));
-                    $length = (isset($row['CHARACTER_MAXIMUM_LENGTH']) ? intval(array_get($row,
-                        'CHARACTER_MAXIMUM_LENGTH')) : null);
-                    $precision = (isset($row['NUMERIC_PRECISION']) ? intval(array_get($row,
-                        'NUMERIC_PRECISION')) : null);
-                    $scale = (isset($row['NUMERIC_SCALE']) ? intval(array_get($row, 'NUMERIC_SCALE')) : null);
-                    switch (strtoupper(array_get($row, 'ROW_TYPE', ''))) {
+                    $pos = intval(Arr::get($row, 'ORDINAL_POSITION'));
+                    $length = (isset($row['CHARACTER_MAXIMUM_LENGTH']) ? intval(Arr::get($row, 'CHARACTER_MAXIMUM_LENGTH')) : null);
+                    $precision = (isset($row['NUMERIC_PRECISION']) ? intval(Arr::get($row, 'NUMERIC_PRECISION')) : null);
+                    $scale = (isset($row['NUMERIC_SCALE']) ? intval(Arr::get($row, 'NUMERIC_SCALE')) : null);
+                    switch (strtoupper(Arr::get($row, 'ROW_TYPE', ''))) {
                         case 'P':
-                            $paramType = array_get($row, 'PARAMETER_MODE');
+                            $paramType = Arr::get($row, 'PARAMETER_MODE');
                             $holder->addParameter(new ParameterSchema(
                                 [
                                     'name'          => $paramName,
@@ -948,7 +947,7 @@ MYSQL;
                                     'length'        => ($dbType == "CHARACTER") ? $length + 1 : $length,
                                     'precision'     => $precision,
                                     'scale'         => $scale,
-                                    'default_value' => array_get($row, 'DEFAULT'),
+                                    'default_value' => Arr::get($row, 'DEFAULT'),
                                 ]
                             ));
                             break;
@@ -988,13 +987,13 @@ MYSQL;
         $rows = $this->connection->select($sql);
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
-            $paramName = array_get($row, 'PARMNAME');
-            $dbType = array_get($row, 'TYPENAME');
+            $paramName = Arr::get($row, 'PARMNAME');
+            $dbType = Arr::get($row, 'TYPENAME');
             $simpleType = static::extractSimpleType($dbType);
-            $pos = intval(array_get($row, 'ORDINAL'));
-            $length = (isset($row['LENGTH']) ? intval(array_get($row, 'LENGTH')) : null);
-            $scale = (isset($row['SCALE']) ? intval(array_get($row, 'SCALE')) : null);
-            switch (strtoupper(array_get($row, 'ROWTYPE', ''))) {
+            $pos = intval(Arr::get($row, 'ORDINAL'));
+            $length = (isset($row['LENGTH']) ? intval(Arr::get($row, 'LENGTH')) : null);
+            $scale = (isset($row['SCALE']) ? intval(Arr::get($row, 'SCALE')) : null);
+            switch (strtoupper(Arr::get($row, 'ROWTYPE', ''))) {
                 case 'P':
                     $paramType = 'IN';
                     break;
@@ -1036,7 +1035,7 @@ MYSQL;
                         'length'        => $length,
                         'precision'     => $length,
                         'scale'         => $scale,
-                        'default_value' => array_get($row, 'DEFAULT'),
+                        'default_value' => Arr::get($row, 'DEFAULT'),
                     ]
                 ));
             }
@@ -1114,7 +1113,7 @@ MYSQL;
             $pdoType = $this->extractPdoType($paramSchema->type);
             switch ($paramSchema->paramType) {
                 case 'IN':
-                    $this->bindValue($statement, ':' . $paramSchema->name, array_get($values, $key));
+                    $this->bindValue($statement, ':' . $paramSchema->name, Arr::get($values, $key));
                     break;
                 case 'INOUT':
                     if (empty($values[$key]) && (\PDO::PARAM_STR === $pdoType)) {
