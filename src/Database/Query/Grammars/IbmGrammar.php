@@ -72,7 +72,9 @@ class IbmGrammar extends Grammar
         $columns = (!empty($components['columns']) ? $components['columns'] . ', ' : 'select');
 
         if ($columns == 'select *, ' && $query->from) {
-            $columns = 'select ' . $this->tablePrefix . $query->from . '.*, ';
+            // Laravel 13 moved the table prefix off Grammar; ask the connection
+            // (or the deprecated Grammar::getTablePrefix() shim) for it.
+            $columns = 'select ' . $this->getTablePrefix() . $query->from . '.*, ';
         }
 
         $components['columns'] = $this->compileOver($orderings, $columns);

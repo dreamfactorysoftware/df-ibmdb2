@@ -2,7 +2,6 @@
 
 namespace DreamFactory\Core\IbmDb2\Database\Query\Processors;
 
-use DreamFactory\Core\IbmDb2\Database\Query\Grammars\IbmGrammar;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\Processors\Processor;
 
@@ -22,8 +21,10 @@ class IbmProcessor extends Processor
     {
         $sequenceStr = $sequence ?: 'id';
         if (is_array($sequence)) {
-            $grammar = new IbmGrammar;
-            $sequenceStr = $grammar->columnize($sequence);
+            // Laravel 13's Grammar requires a Connection in its constructor;
+            // reuse the existing query's grammar instead of newing one up so
+            // we inherit its connection/table-prefix wiring.
+            $sequenceStr = $query->getGrammar()->columnize($sequence);
         }
         $sql = 'select "' . $sequenceStr . '" from new table (' . $sql;
         $sql .= ')';
