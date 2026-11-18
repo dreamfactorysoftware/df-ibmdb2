@@ -717,9 +717,12 @@ MYSQL;
 
     protected function getTableConstraints($schema = '')
     {
-        if (is_array($schema)) {
-            $schema = implode("','", $schema);
+        $schemas = is_array($schema) ? array_values($schema) : [$schema];
+        $schemas = array_values(array_filter($schemas, fn ($s) => $s !== '' && $s !== null));
+        if (empty($schemas)) {
+            return [];
         }
+        $placeholders = implode(',', array_fill(0, count($schemas), '?'));
 
         $constraints = [];
         switch ($this->getDB2Series()) {
@@ -733,7 +736,7 @@ FROM qsys2.syscst tc
 INNER JOIN qsys2.syskeycst kcu ON kcu.constraint_name = tc.constraint_name
 INNER JOIN qsys2.sysrefcst rc ON tc.constraint_schema = rc.constraint_schema AND tc.constraint_name = rc.constraint_name
 INNER JOIN qsys2.syskeycst kcu2 ON rc.unique_constraint_schema = kcu2.constraint_schema AND rc.unique_constraint_name = kcu2.constraint_name
-WHERE tc.table_schema IN ('{$schema}');
+WHERE tc.table_schema IN ({$placeholders});
 MYSQL;
                 break;
             case static::DB2_LUW:
@@ -746,7 +749,7 @@ FROM SYSCAT.TABCONST tc
 LEFT JOIN SYSCAT.KEYCOLUSE kcu ON tc.constname = kcu.constname AND tc.tabname = kcu.tabname
 LEFT JOIN SYSCAT.REFERENCES rc ON tc.constname = rc.constname
 LEFT JOIN SYSCAT.KEYCOLUSE kcu2 ON rc.reftabschema = kcu2.tabschema AND rc.reftabname = kcu2.tabname AND rc.refkeyname = kcu2.constname AND kcu.colseq = kcu2.colseq
-WHERE tc.tabschema IN ('{$schema}');
+WHERE tc.tabschema IN ({$placeholders});
 SQL;
                 break;
             case static::DB2_ZOS:
@@ -756,9 +759,9 @@ SELECT tc.CONSTNAME AS constraint_name, tc.TYPE as constraint_type,
 tc.TBCREATOR AS table_schema, tc.TBNAME as table_name, kcu.COLNAME AS column_name
 FROM SYSIBM.SYSTABCONST tc
 LEFT JOIN SYSIBM.SYSKEYCOLUSE kcu ON tc.constname = kcu.constname AND tc.tbname = kcu.tbname
-WHERE tc.TBCREATOR IN ('{$schema}');
+WHERE tc.TBCREATOR IN ({$placeholders});
 MYSQL;
-                $results = $this->connection->select($sql);
+                $results = $this->connection->select($sql, $schemas);
                 foreach ($results as $row) {
                     $row = array_change_key_case((array)$row, CASE_LOWER);
                     $ts = strtolower($row['table_schema']);
@@ -780,7 +783,7 @@ rel.REFTBCREATOR AS referenced_table_schema, rel.REFTBNAME as referenced_table_n
 rel.DELETERULE as delete_rule
 FROM SYSIBM.SYSRELS rel
 INNER JOIN SYSIBM.SYSFOREIGNKEYS fk ON fk.RELNAME = rel.RELNAME
-WHERE tc.TBCREATOR IN ('{$schema}');
+WHERE tc.TBCREATOR IN ({$placeholders});
 MYSQL;
                 break;
 //            case static::DB2_ODBC:
@@ -810,7 +813,7 @@ MYSQL;
 //                break;
         }
 
-        $results = $this->connection->select($sql);
+        $results = $this->connection->select($sql, $schemas);
         foreach ($results as $row) {
             $row = array_change_key_case((array)$row, CASE_LOWER);
             $ts = strtolower($row['table_schema']);
@@ -915,15 +918,19 @@ MYSQL;
 
     protected function loadParameters(RoutineSchema $holder)
     {
+        $bindings = [
+            ':name'   => $holder->resourceName,
+            ':schema' => $holder->schemaName,
+        ];
         switch ($this->getDB2Series()) {
             case static::DB2_ISERIES:
                 $sql = <<<MYSQL
 SELECT ORDINAL_POSITION, PARAMETER_MODE, ROW_TYPE, PARAMETER_NAME, DATA_TYPE, NUMERIC_PRECISION, NUMERIC_SCALE, CHARACTER_MAXIMUM_LENGTH, DEFAULT
 FROM QSYS2.SYSPARMS
-WHERE SPECIFIC_NAME = '{$holder->resourceName}' AND SPECIFIC_SCHEMA = '{$holder->schemaName}'
+WHERE SPECIFIC_NAME = :name AND SPECIFIC_SCHEMA = :schema
 MYSQL;
 
-                $rows = $this->connection->select($sql);
+                $rows = $this->connection->select($sql, $bindings);
                 foreach ($rows as $row) {
                     $row = array_change_key_case((array)$row, CASE_UPPER);
                     $paramName = Arr::get($row, 'PARAMETER_NAME');
@@ -972,19 +979,19 @@ MYSQL;
                 $sql = <<<MYSQL
 SELECT ORDINAL, ROWTYPE, PARMNAME, TYPENAME, LENGTH, SCALE, DEFAULT
 FROM SYSCAT.ROUTINEPARMS
-WHERE ROUTINENAME = '{$holder->resourceName}' AND ROUTINESCHEMA = '{$holder->schemaName}'
+WHERE ROUTINENAME = :name AND ROUTINESCHEMA = :schema
 MYSQL;
                 break;
             case static::DB2_ZOS:
                 $sql = <<<MYSQL
 SELECT ORDINAL, ROWTYPE, PARMNAME, TYPENAME, LENGTH, SCALE, DEFAULT
 FROM SYSIBM.SYSPARMS
-WHERE NAME = '{$holder->resourceName}' AND SCHEMA = '{$holder->schemaName}'
+WHERE NAME = :name AND SCHEMA = :schema
 MYSQL;
                 break;
         }
 
-        $rows = $this->connection->select($sql);
+        $rows = $this->connection->select($sql, $bindings);
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $paramName = Arr::get($row, 'PARMNAME');

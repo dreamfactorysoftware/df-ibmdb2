@@ -3,7 +3,6 @@
 namespace DreamFactory\Core\IbmDb2\Database\Schema\Grammars;
 
 use Illuminate\Database\Query\Expression;
-use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Grammars\Grammar;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Fluent;
@@ -44,33 +43,47 @@ class IbmGrammar extends Grammar
     /**
      * Compile the query to determine the list of tables.
      *
+     * Laravel 13 widened this signature from no-args to ($schema, $table). The
+     * IBM override returns a parameterized SELECT that the caller binds with
+     * the supplied schema/table values, preserving the prior behavior while
+     * staying compatible with the parent contract.
+     *
+     * @param  string|null  $schema
+     * @param  string  $table
      * @return string
      */
-    public function compileTableExists()
+    public function compileTableExists($schema, $table)
     {
-        return 'select * from information_schema.tables where table_schema = "?" and table_name = "?"';
+        return 'select * from information_schema.tables where table_schema = ? and table_name = ?';
     }
 
     /**
      * Compile the query to determine the list of columns.
      *
+     * Note: Laravel 13 removed `compileColumnExists` from the base Schema
+     * Grammar. This method is kept here for backward-compatible direct callers
+     * within DreamFactory but is no longer part of the parent contract.
+     *
      * @return string
      */
     public function compileColumnExists()
     {
-        return 'select column_name from information_schema.columns where table_schema = "?" and table_name = "?"';
+        return 'select column_name from information_schema.columns where table_schema = ? and table_name = ?';
     }
 
     /**
      * Compile a create table command.
      *
+     * Laravel 13's Blueprint::toSql() dispatches with only ($blueprint, $command);
+     * the legacy Connection arg was dropped framework-wide. Mirror MySqlGrammar's
+     * 2-arg signature so the dynamic dispatch resolves correctly.
+     *
      * @param  \Illuminate\Database\Schema\Blueprint $blueprint
      * @param  \Illuminate\Support\Fluent            $command
-     * @param  \Illuminate\Database\Connection       $connection
      *
      * @return string
      */
-    public function compileCreate(Blueprint $blueprint, Fluent $command, Connection $connection)
+    public function compileCreate(Blueprint $blueprint, Fluent $command)
     {
         $columns = implode(', ', $this->getColumns($blueprint));
 
@@ -90,11 +103,10 @@ class IbmGrammar extends Grammar
      *
      * @param  \Illuminate\Database\Schema\Blueprint $blueprint
      * @param  \Illuminate\Support\Fluent            $command
-     * @param  \Illuminate\Database\Connection       $connection
      *
      * @return string
      */
-    public function compileLabel(Blueprint $blueprint, Fluent $command, Connection $connection)
+    public function compileLabel(Blueprint $blueprint, Fluent $command)
     {
         return 'label on table ' . $this->wrapTable($blueprint) . ' is \'' . $command->label . '\'';
     }
